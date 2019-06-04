@@ -57,7 +57,7 @@ function upload_package() {
 }
 
 
-######## main ########
+# main
 # Receive parameters
 if [ ! -f "./build/ci.sh" ]; then
     echo "$0 must be run from the root of the platon repository."
@@ -67,9 +67,10 @@ elif [ $# != 3 ]; then
     echo " ci.sh [platon_root_path] [current_system] [is_open_mv]"
     exit 2
 else
-    PLATON_PATH=$1
-    BUILD_PLATFORM=$2
-    BUILD_WITH_MV=$3
+    echo "PRARMS:"
+    cd $1 && PLATON_PATH=$(pwd) && echo "PLATON_PATH=${PLATON_PATH}"
+    BUILD_PLATFORM=$2 && echo "BUILD_PLATFORM=${BUILD_PLATFORM}"
+    BUILD_WITH_MV=$3 && echo "BUILD_WITH_MV=${BUILD_WITH_MV}"
 fi
 
 # run build
