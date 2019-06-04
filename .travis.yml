@@ -10,7 +10,7 @@ matrix:
       sudo: required
       go: 1.12.x
       script:
-        - bash ./build/ci.sh ./ ubuntu false
+        - sh ./build/ci.sh ./ ubuntu false
 
     - name: ubuntu compile(make all with mv)
       os: linux
@@ -18,20 +18,20 @@ matrix:
       sudo: required
       go: 1.12.x
       script:
-        - bash ./build/ci.sh ./ ubuntu true
+        - sh ./build/ci.sh ./ ubuntu true
 
     # This builders compile PlatON at Windows server 2016
     - name: windows compile(make all)
       os: windows
       go: 1.12.x
       script:
-        - bash ./build/ci.sh ./ windows false
+        - sh ./build/ci.sh ./ windows false
 
     - name: windows compile(make all with mv)
       os: windows
       go: 1.12.x
       script:
-        - bash ./build/ci.sh ./ windows true
+        - sh ./build/ci.sh ./ windows true
 
     # This builder run the code scans uses gometalinter
     - name: code scan
