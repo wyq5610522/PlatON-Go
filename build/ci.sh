@@ -1,12 +1,10 @@
-#!/bin/sh
 set -e
-
 
 # ubuntu builder
 function ubuntu_build() {
     cd ${PLATON_PATH}
     [ "${BUILD_WITH_MV}" == "true" ] && build_command="make all-with-mv"
-    [ "${BUILD_WITH_MV}" == "fales" ] && build_command="make all"
+    [ "${BUILD_WITH_MV}" == "false" ] && build_command="make all"
     chmod u+x ./build/*.sh
     ${build_command}
 }
@@ -15,7 +13,7 @@ function ubuntu_build() {
 function ubuntu_package() {
     cd ${PLATON_PATH}/build/bin/
     [ "${BUILD_WITH_MV}" == "true" ] && postfix="-with-mv"
-    [ "${BUILD_WITH_MV}" == "fales" ] && postfix=""
+    [ "${BUILD_WITH_MV}" == "false" ] && postfix=""
 	dir_name="platon-ubuntu${postfix}"
 	mkdir ${dir_name} && cp platon ctool ethkey ${dir_name}
 	tar_name="${dir_name}.tar.gz"
@@ -26,7 +24,7 @@ function ubuntu_package() {
 function windows_build() {
     cd ${PLATON_PATH}
     [ "${BUILD_WITH_MV}" == "true" ] && build_command="go run build/ci.go install -mpc on"
-    [ "${BUILD_WITH_MV}" == "fales" ] && build_command="go run build/ci.go install"
+    [ "${BUILD_WITH_MV}" == "false" ] && build_command="go run build/ci.go install"
     chmod u+x ./build/*.sh
     sh ./build/build_deps.sh
     ${build_command}
@@ -36,7 +34,7 @@ function windows_build() {
 function windows_package() {
     cd ${PLATON_PATH}/build/bin/
     [ "${BUILD_WITH_MV}" == "true" ] && postfix="-with-mv"
-    [ "${BUILD_WITH_MV}" == "fales" ] && postfix=""
+    [ "${BUILD_WITH_MV}" == "false" ] && postfix=""
 	dir_name="platon-windows${postfix}"
 	mkdir ${dir_name} && cp platon.exe ctool.exe ethkey.exe ${dir_name}
 	zip_name="${dir_name}.zip"
