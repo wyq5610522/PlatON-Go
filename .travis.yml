@@ -3,24 +3,35 @@ go_import_path: github.com/PlatONnetwork/PlatON-Go
 # sudo: false
 matrix:
   include:
-    # This builder compile PlatON at Ubuntu xenial
-    - name: ubuntu compile
+    # This builders compile PlatON at Ubuntu xenial
+    - name: ubuntu compile(make all)
       os: linux
       dist: xenial
       sudo: required
       go: 1.12.x
       script:
-        - chmod u+x ./build/*.sh
-        - make all
+        - sh ./build/ci.sh ./ ubuntu false
 
-    # This builder compile PlatON at Windows server 2016
-    # - name: windows compile
-    #   os: windows
-    #   go: 1.12.x
-    #   script:
-    #     - chmod u+x ./build/*.sh
-    #     - sh ./build/build_deps.sh
-    #     - go run build/ci.go install
+    - name: ubuntu compile(make all with mv)
+      os: linux
+      dist: xenial
+      sudo: required
+      go: 1.12.x
+      script:
+        - sh ./build/ci.sh ./ ubuntu true
+
+    # This builders compile PlatON at Windows server 2016
+    - name: windows compile(make all)
+      os: windows
+      go: 1.12.x
+      script:
+        - sh ./build/ci.sh ./ windows false
+
+    - name: windows compile(make all with mv)
+      os: windows
+      go: 1.12.x
+      script:
+        - sh ./build/ci.sh ./ windows true
 
     # This builder run the code scans uses gometalinter
     - name: code scan
