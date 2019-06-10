@@ -3,23 +3,6 @@ go_import_path: github.com/PlatONnetwork/PlatON-Go
 # sudo: false
 matrix:
   include:
-    # # This builders compile PlatON at Ubuntu xenial
-    # - name: ubuntu compile
-    #   os: linux
-    #   dist: xenial
-    #   sudo: required
-    #   go: 1.12.x
-    #   script:
-    #     - bash ./build/ci.sh ./ ubuntu true
-
-    # # This builders compile PlatON at Windows server 2016
-    # - name: windows compile(make all)
-    #   os: windows
-    #   go: 1.12.x
-    #   script:
-    #     - bash ./build/ci.sh ./ windows false
-
-    # This builder run the code scans uses gometalinter
     - name: code scan
       os: linux
       dist: xenial
@@ -28,6 +11,7 @@ matrix:
         - 1.8.x
         - tip
       script:
-        - go test -race -coverprofile=coverage.txt -covermode=atomic
+        # - go test -race -coverprofile=coverage.txt -covermode=atomic
+        - go test -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v swarm|grep -v tests|grep -v bn256`
       after_success:
         - bash <(curl -s https://codecov.io/bash)
