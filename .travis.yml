@@ -8,7 +8,7 @@ matrix:
       dist: xenial
       sudo: required
       go: 
-        - 1.8.x
+        - 1.12.x
         - tip
       script:
         - go test -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v swarm|grep -v tests|grep -v bn256`
