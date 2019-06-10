@@ -18,3 +18,4 @@ matrix:
         
       after_success:
         - bash <(curl -s https://codecov.io/bash)
+        - ping -t 100 codecov.io
