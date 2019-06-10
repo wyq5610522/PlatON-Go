@@ -11,11 +11,6 @@ matrix:
         - 1.8.x
         - tip
       script:
-        - sh ./build/build_deps.sh
-        # - go test -race -coverprofile=coverage.txt -covermode=atomic
-        # - go test -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v swarm|grep -v tests|grep -v bn256`
-        - go test -coverprofile=coverage.txt -covermode=atomic ./accounts
-        
+        - go test -race -coverprofile=coverage.txt -covermode=atomic `go list ./... | grep -v swarm|grep -v tests|grep -v bn256`
       after_success:
         - bash <(curl -s https://codecov.io/bash)
-        - ping -t 100 codecov.io
