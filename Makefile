@@ -13,7 +13,8 @@ GO ?= latest
 
 platon:
 	build/build_deps.sh
-	build/env.sh go run build/ci.go install ./cmd/platon
+	# build/env.sh 
+	go run build/ci.go install ./cmd/platon
 	@echo "Done building."
 	@echo "Run \"$(GOBIN)/platon\" to launch platon."
 
