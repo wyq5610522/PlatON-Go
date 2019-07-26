@@ -816,7 +816,7 @@ func (w *worker) resultLoop() {
 			// Broadcast the block and announce chain insertion event
 			w.mux.Post(core.NewMinedBlockEvent{Block: block})
 			NewMinedBlockMeter.Mark(1)
-			MinedBlockTxCountHistogram.Update(block.Transactions().Len())
+			MinedBlockTxCountHistogram.Update(len(block.Transactions()))
 
 			var events []interface{}
 			switch stat {
