@@ -93,6 +93,7 @@ var (
 
 var (
 	// Metrics for the pending pool
+	inpendingCount          = metrics.NewRegisteredCounter("txpool/pending/in", nil)
 	pendingDiscardCounter   = metrics.NewRegisteredCounter("txpool/pending/discard", nil)
 	pendingReplaceCounter   = metrics.NewRegisteredCounter("txpool/pending/replace", nil)
 	pendingRateLimitCounter = metrics.NewRegisteredCounter("txpool/pending/ratelimit", nil) // Dropped due to rate limiting
@@ -1662,6 +1663,7 @@ func (t *txLookup) Add(tx *types.Transaction) {
 	defer t.lock.Unlock()
 
 	t.all[tx.Hash()] = tx
+	inpendingCount.Inc(1)
 }
 
 // Remove removes a transaction from the lookup.
