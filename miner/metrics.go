@@ -7,5 +7,5 @@ import (
 var (
 	//readyBlockMeter = metrics.NewRegisteredCounter("miner/block/ready", nil)
 	NewMinedBlockMeter         = metrics.NewRegisteredMeter("miner/block/mined", nil)
-	MinedBlockTxCountHistogram = metrics.NewRegisteredHistogram("miner/block/txCountHistogram", nil)
+	MinedBlockTxCountHistogram = metrics.NewRegisteredHistogram("miner/block/txCountHistogram", nil, metrics.NewUniformSample(100))
 )
