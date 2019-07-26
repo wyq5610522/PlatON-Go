@@ -5,6 +5,6 @@ import (
 )
 
 var (
-	readyBlockMeter = metrics.NewRegisteredCounter("miner/block/ready", nil)
-	newBlockMeter   = metrics.NewRegisteredCounter("miner/block/new", nil)
+	//readyBlockMeter = metrics.NewRegisteredCounter("miner/block/ready", nil)
+	NewMinedBlockMeter = metrics.NewRegisteredMeter("miner/block/mined", nil)
 )
