@@ -1372,7 +1372,7 @@ func SetupMetrics(ctx *cli.Context) {
 
 		if enableExport {
 			log.Info("Enabling metrics export to InfluxDB")
-			go influxdb.InfluxDBWithTags(metrics.DefaultRegistry, 10*time.Second, endpoint, database, username, password, "platon.", map[string]string{
+			go influxdb.InfluxDBWithTags(metrics.DefaultRegistry, 1*time.Second, endpoint, database, username, password, "platon.", map[string]string{
 				"host": hosttag,
 			})
 		}
