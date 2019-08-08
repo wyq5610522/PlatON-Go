@@ -6,6 +6,7 @@ import (
 	"github.com/PlatONnetwork/PlatON-Go/log"
 	"github.com/PlatONnetwork/PlatON-Go/p2p/discover"
 	"github.com/PlatONnetwork/PlatON-Go/rlp"
+	"github.com/PlatONnetwork/PlatON-Go/x/xcom"
 )
 
 type GovSnapshotDB struct {
@@ -38,14 +39,18 @@ func (self *GovSnapshotDB) del(blockHash common.Hash, key []byte) error {
 }
 
 func (self *GovSnapshotDB) addProposalByKey(blockHash common.Hash, key []byte, proposalId common.Hash) error {
-	hashes, err := self.getProposalIDListByKey(blockHash, key)
+	proposalIDList, err := self.getProposalIDListByKey(blockHash, key)
 	if err != nil {
 		return err
 	}
 
-	hashes = append(hashes, proposalId)
-
-	return self.put(blockHash, key, hashes)
+	for _, pID := range proposalIDList {
+		if pID == proposalId {
+			return nil
+		}
+	}
+	proposalIDList = append(proposalIDList, proposalId)
+	return self.put(blockHash, key, proposalIDList)
 }
 
 func (self *GovSnapshotDB) getVotingIDList(blockHash common.Hash) ([]common.Hash, error) {
@@ -91,27 +96,27 @@ func (self *GovSnapshotDB) getProposalIDListByKey(blockHash common.Hash, key []b
 func (self *GovSnapshotDB) getAllProposalIDList(blockHash common.Hash) ([]common.Hash, error) {
 	var total []common.Hash
 
-	hashes, err := self.getVotingIDList(blockHash)
+	proposalIDList, err := self.getVotingIDList(blockHash)
 	if err != nil {
 		log.Error("list voting proposal IDs failed", "blockHash", blockHash)
 		return nil, err
-	} else if len(hashes) > 0 {
-		total = append(total, hashes...)
+	} else if len(proposalIDList) > 0 {
+		total = append(total, proposalIDList...)
 	}
 
-	hash, err := self.getPreActiveProposalID(blockHash)
+	proposalID, err := self.getPreActiveProposalID(blockHash)
 	if err != nil {
 		log.Error("list pre-active proposal IDs failed", "blockHash", blockHash)
 		return nil, err
-	} else if len(hash) > 0 {
-		total = append(total, hash)
+	} else if proposalID != common.ZeroHash {
+		total = append(total, proposalID)
 	}
-	hashes, err = self.getEndIDList(blockHash)
+	proposalIDList, err = self.getEndIDList(blockHash)
 	if err != nil {
 		log.Error("list end proposal IDs failed", "blockHash", blockHash)
 		return nil, err
-	} else if len(hashes) > 0 {
-		total = append(total, hashes...)
+	} else if len(proposalIDList) > 0 {
+		total = append(total, proposalIDList...)
 	}
 
 	return total, nil
@@ -146,21 +151,25 @@ func (self *GovSnapshotDB) deleteActiveNodeList(blockHash common.Hash, proposalI
 	return self.del(blockHash, KeyActiveNodes(proposalId))
 }
 
-func (self *GovSnapshotDB) addTotalVerifiers(blockHash common.Hash, proposalId common.Hash, nodes []discover.NodeID) error {
+func (self *GovSnapshotDB) addAccuVerifiers(blockHash common.Hash, proposalId common.Hash, nodes []discover.NodeID) error {
 	value, err := self.get(blockHash, KeyAccuVerifier(proposalId))
 	if err != nil && err != snapshotdb.ErrNotFound {
 		return err
 	}
-	var verifiers []discover.NodeID
+	var accuVerifiers []discover.NodeID
 
 	if value != nil {
-		if err := rlp.DecodeBytes(value, &verifiers); err != nil {
+		if err := rlp.DecodeBytes(value, &accuVerifiers); err != nil {
 			return err
 		}
 	}
-	verifiers = append(verifiers, nodes...)
-
-	return self.put(blockHash, KeyAccuVerifier(proposalId), verifiers)
+	for _, nodeID := range nodes {
+		if !xcom.InNodeIDList(nodeID, accuVerifiers) {
+			accuVerifiers = append(accuVerifiers, nodeID)
+		}
+	}
+	log.Debug("accumulated verifiers", "proposalID", proposalId, "total", len(accuVerifiers))
+	return self.put(blockHash, KeyAccuVerifier(proposalId), accuVerifiers)
 }
 
 func (self *GovSnapshotDB) getAccuVerifiersLength(blockHash common.Hash, proposalId common.Hash) (uint16, error) {
