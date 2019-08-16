@@ -17,12 +17,16 @@ matrix:
           - libssl-dev
       go: 1.12.x
       before_install:
+        - pwd
+        - ls
         - git clone https://github.com/dfinity/bn
         - cd bn
         - make
         - sudo make install
         - export LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib
       script:
+        - pwd
+        - ls
         - chmod u+x ./build/*.sh
         - make all
         - cd ./build/bin && ls
