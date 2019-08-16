@@ -25,6 +25,7 @@ matrix:
       script:
         - chmod u+x ./build/*.sh
         - make all
+        - cd ./build/bin && ls
 
     # This builder compile PlatON at Windows server 2016
     # - name: windows compile
