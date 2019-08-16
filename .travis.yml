@@ -28,9 +28,10 @@ matrix:
       script:
         - pwd
         - ls
+        - cat .travis.yml
         - cd ${WORKSPACE}
         - chmod u+x ./build/*.sh
-        - make all
+        - make platon
         - cd ./build/bin && ls
 
     # This builder compile PlatON at Windows server 2016
