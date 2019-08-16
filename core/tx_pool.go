@@ -19,13 +19,14 @@ package core
 import (
 	"errors"
 	"fmt"
-	"github.com/PlatONnetwork/PlatON-Go/consensus"
 	"math"
 	"math/big"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/PlatONnetwork/PlatON-Go/consensus"
 
 	"github.com/PlatONnetwork/PlatON-Go/common"
 	"github.com/PlatONnetwork/PlatON-Go/common/prque"
@@ -38,13 +39,6 @@ import (
 )
 
 const (
-	// chainHeadChanSize is the size of channel listening to ChainHeadEvent.
-	// size is setted max blocks of one epoch
-	chainHeadChanSize = 250
-
-	// txExtBufferSize is the size fo channel listening to txExt.
-	txExtBufferSize = 4096
-
 	DoneRst      = 0
 	DoingRst     = 1
 	DonePending  = 0
@@ -87,6 +81,9 @@ var (
 	// than some meaningful limit a user might use. This is not a consensus error
 	// making the transaction invalid, rather a DOS protection.
 	ErrOversizedData = errors.New("oversized data")
+
+	// PlatON inner contract tx data invalid
+	ErrPlatONTxDataInvalid = errors.New("the tx data is invalid")
 )
 
 var (
@@ -96,6 +93,7 @@ var (
 
 var (
 	// Metrics for the pending pool
+	pendingEnterCount       = metrics.NewRegisteredCounter("txpool/pending/enter", nil)
 	pendingDiscardCounter   = metrics.NewRegisteredCounter("txpool/pending/discard", nil)
 	pendingReplaceCounter   = metrics.NewRegisteredCounter("txpool/pending/replace", nil)
 	pendingRateLimitCounter = metrics.NewRegisteredCounter("txpool/pending/ratelimit", nil) // Dropped due to rate limiting
@@ -177,6 +175,9 @@ type TxPoolConfig struct {
 	GlobalTxCount uint64 // Maximum number of transactions for package
 
 	Lifetime time.Duration // Maximum amount of time non-executable transaction are queued
+
+	ChainHeadChanSize uint64 // chainHeadChanSize is the size of channel listening to ChainHeadEvent. size is setted max blocks of one epoch
+	TxExtBufferSize   uint64 // txExtBufferSize is the size fo channel listening to txExt.
 }
 
 // DefaultTxPoolConfig contains the default configurations for the transaction
@@ -195,6 +196,9 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	GlobalTxCount: 3000,
 
 	Lifetime: 3 * time.Hour,
+
+	ChainHeadChanSize: 250,
+	TxExtBufferSize:   1024,
 }
 
 // sanitize checks the provided user configurations and changes anything that's
@@ -253,8 +257,6 @@ type TxPool struct {
 
 	wg sync.WaitGroup // for shutdown sync
 
-	homestead bool
-
 	txExtBuffer chan *txExt
 
 	rstFlag     int32
@@ -286,10 +288,10 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain txPoo
 		all:         newTxLookup(),
 		// modified by PlatON
 		// chainHeadCh: make(chan ChainHeadEvent, chainHeadChanSize),
-		chainHeadCh: make(chan *types.Block, chainHeadChanSize),
+		chainHeadCh: make(chan *types.Block, config.ChainHeadChanSize),
 		exitCh:      make(chan struct{}),
 		gasPrice:    new(big.Int).SetUint64(config.PriceLimit),
-		txExtBuffer: make(chan *txExt, txExtBufferSize),
+		txExtBuffer: make(chan *txExt, config.TxExtBufferSize),
 		rstFlag:     DoneRst,
 		pendingFlag: DonePending,
 	}
@@ -484,17 +486,14 @@ func (pool *TxPool) Reset(newBlock *types.Block) {
 
 	if newBlock != nil {
 		pool.mu.Lock()
-		if pool.chainconfig.IsHomestead(newBlock.Number()) {
-			pool.homestead = true
+
+		if newBlock.NumberU64() < pool.chain.CurrentBlock().NumberU64() {
+			atomic.StoreInt32(&pool.rstFlag, DoingRst)
 		}
 		pool.reset(head.Header(), newBlock.Header())
 		head = newBlock
 
 		pool.mu.Unlock()
-	}
-
-	if newBlock.NumberU64() < pool.chain.CurrentBlock().NumberU64() {
-		atomic.StoreInt32(&pool.rstFlag, DoingRst)
 	}
 	log.Debug("call Reset elapse time", "RoutineID", common.CurrentGoRoutineID(), "hash", newBlock.Hash(), "number", newBlock.NumberU64(), "parentHash", newBlock.ParentHash(), "elapseTime", common.PrettyDuration(time.Since(startTime)))
 }
@@ -812,6 +811,12 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 // validateTx checks whether a transaction is valid according to the consensus
 // rules and adheres to some heuristic limits of the local node (price and size).
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
+
+	// todo: shield contract to created in temporary
+	if tx.To() == nil {
+		return fmt.Errorf("contract creation is not allowed")
+	}
+
 	// Heuristic limit, reject transactions over 32KB to prevent DOS attacks
 	// 32kb -> 1m
 	if tx.Size() > 1024*1024 {
@@ -849,7 +854,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if pool.currentState.GetBalance(from).Cmp(tx.Cost()) < 0 {
 		return ErrInsufficientFunds
 	}
-	intrGas, err := IntrinsicGas(tx.Data(), tx.To() == nil, pool.homestead)
+	intrGas, err := IntrinsicGas(tx.Data(), tx.To() == nil, true)
 	if err != nil {
 		return err
 	}
@@ -857,12 +862,12 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		return ErrIntrinsicGas
 	}
 
-
 	// Verify inner contract tx
-	if err := bcr.Verify_tx(tx, from); nil != err {
-		return err
+	if nil != tx.To() {
+		if err := bcr.Verify_tx(tx, *(tx.To())); nil != err {
+			return fmt.Errorf("%s: %s", ErrPlatONTxDataInvalid.Error(), err.Error())
+		}
 	}
-
 
 	return nil
 }
@@ -1092,6 +1097,7 @@ func (pool *TxPool) AddRemotes(txs []*types.Transaction) []error {
 			knowingTxCounter.Inc(1)
 			continue
 		}
+
 		newTxs = append(newTxs, tx)
 	}
 	if len(newTxs) == 0 {
@@ -1104,6 +1110,8 @@ func (pool *TxPool) AddRemotes(txs []*types.Transaction) []error {
 	case <-pool.exitCh:
 		return nil
 	case pool.txExtBuffer <- txExt:
+		return nil
+	default:
 		return nil
 	}
 }
@@ -1655,6 +1663,7 @@ func (t *txLookup) Add(tx *types.Transaction) {
 	defer t.lock.Unlock()
 
 	t.all[tx.Hash()] = tx
+	pendingEnterCount.Inc(1)
 }
 
 // Remove removes a transaction from the lookup.

@@ -2,6 +2,7 @@ package cbft
 
 import (
 	"fmt"
+	"github.com/PlatONnetwork/PlatON-Go/params"
 	"math/big"
 	"reflect"
 	"time"
@@ -74,9 +75,10 @@ func (h *baseHandler) sendLoop() {
 		select {
 		case m := <-h.sendQueue:
 			if m == nil || h.cbft.isLoading() {
+				log.Warn("read msg from sendQueue, message is nil or isLoading is true", "isLoading", h.cbft.isLoading())
 				return
 			}
-			log.Debug("send msg to queue", "mode", m.mode, "", m.msg.String(), "isLoading", h.cbft.isLoading())
+			log.Debug("send msg to queue", "mode", m.mode, "msgHash", m.msg.MsgHash().TerminalString(), "isLoading", h.cbft.isLoading())
 			if len(m.peerID) == 0 {
 				h.broadcast(m)
 			} else {
@@ -170,6 +172,15 @@ func (h *baseHandler) Protocols() []p2p.Protocol {
 			Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
 				return h.handler(p, rw)
 			},
+			NodeInfo: func() interface{} {
+				return h.NodeInfo()
+			},
+			PeerInfo: func(id discover.NodeID) interface{} {
+				if p, err := h.peers.Get(fmt.Sprintf("%5x", id[:8])); err == nil {
+					return p.Info()
+				}
+				return nil
+			},
 		},
 	}
 }
@@ -213,6 +224,9 @@ func (h *baseHandler) handleMsg(p *peer) error {
 	if err != nil {
 		p.Log().Error("read peer message error", "err", err)
 		return err
+	}
+	if msg.Size > CbftProtocolMaxMsgSize {
+		return errResp(ErrMsgTooLarge, "%v > %v", msg.Size, CbftProtocolMaxMsgSize)
 	}
 	switch {
 	case msg.Code == CBFTStatusMsg:
@@ -446,5 +460,16 @@ func (h *baseHandler) syncHighestStatus() {
 			log.Warn("Handler quit")
 			return
 		}
+	}
+}
+
+type NodeInfo struct {
+	Config *params.CbftConfig `json:"config"`
+}
+
+func (h *baseHandler) NodeInfo() *NodeInfo {
+	cbftConfig := h.cbft.config
+	return &NodeInfo{
+		Config: cbftConfig,
 	}
 }

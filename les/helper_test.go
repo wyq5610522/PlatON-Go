@@ -40,6 +40,7 @@ import (
 	"github.com/PlatONnetwork/PlatON-Go/p2p"
 	"github.com/PlatONnetwork/PlatON-Go/p2p/discover"
 	"github.com/PlatONnetwork/PlatON-Go/params"
+	_ "github.com/PlatONnetwork/PlatON-Go/x/xcom"
 )
 
 var (
@@ -79,7 +80,7 @@ contract test {
 */
 
 func testChainGen(i int, block *core.BlockGen) {
-	signer := types.HomesteadSigner{}
+	signer := types.NewEIP155Signer(new(big.Int))
 
 	switch i {
 	case 0:

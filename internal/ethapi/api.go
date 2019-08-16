@@ -21,11 +21,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/PlatONnetwork/PlatON-Go/consensus"
 	"math/big"
-	"os"
-	"path/filepath"
 	"time"
+
+	"github.com/PlatONnetwork/PlatON-Go/consensus"
+
+	"strings"
 
 	"github.com/PlatONnetwork/PlatON-Go/accounts"
 	"github.com/PlatONnetwork/PlatON-Go/accounts/keystore"
@@ -45,11 +46,10 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
-	"strings"
 )
 
 const (
-	defaultGasPrice = params.GWei
+	defaultGasPrice = params.GVon
 )
 
 // PublicEthereumAPI provides an API to access Ethereum related information.
@@ -488,24 +488,24 @@ func NewPublicBlockChainAPI(b Backend) *PublicBlockChainAPI {
 }
 
 // SetActor set address for mpc compute.
-func (s *PublicBlockChainAPI) SetActor(address common.Address) error {
-	absPath, err := filepath.Abs(core.DEFAULT_ACTOR_FILE_NAME)
-	if err != nil {
-		return fmt.Errorf("File not exists : %v", err.Error())
-	}
-	f, err := os.OpenFile(absPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("open file error : %v ", err.Error())
-	}
-	f.Write(address.Bytes())
-	f.Close()
-
-	if core.MPC_POOL != nil {
-		core.MPC_POOL.LoadActor()
-	}
-
-	return nil
-}
+//func (s *PublicBlockChainAPI) SetActor(address common.Address) error {
+//	absPath, err := filepath.Abs(core.DEFAULT_ACTOR_FILE_NAME)
+//	if err != nil {
+//		return fmt.Errorf("File not exists : %v", err.Error())
+//	}
+//	f, err := os.OpenFile(absPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, os.ModePerm)
+//	if err != nil {
+//		return fmt.Errorf("open file error : %v ", err.Error())
+//	}
+//	f.Write(address.Bytes())
+//	f.Close()
+//
+//	if core.MPC_POOL != nil {
+//		core.MPC_POOL.LoadActor()
+//	}
+//
+//	return nil
+//}
 
 // BlockNumber returns the block number of the chain head.
 func (s *PublicBlockChainAPI) BlockNumber() hexutil.Uint64 {
@@ -772,7 +772,6 @@ func RPCMarshalBlock(b *types.Block, inclTx bool, fullTx bool) (map[string]inter
 		"hash":             b.Hash(),
 		"parentHash":       head.ParentHash,
 		"nonce":            head.Nonce,
-		"mixHash":          head.MixDigest,
 		"logsBloom":        head.Bloom,
 		"stateRoot":        head.Root,
 		"miner":            head.Coinbase,
@@ -839,10 +838,7 @@ type RPCTransaction struct {
 // newRPCTransaction returns a transaction that will serialize to the RPC
 // representation, with the given location metadata set (if available).
 func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber uint64, index uint64) *RPCTransaction {
-	var signer types.Signer = types.FrontierSigner{}
-	if tx.Protected() {
-		signer = types.NewEIP155Signer(tx.ChainId())
-	}
+	var signer types.Signer = types.NewEIP155Signer(tx.ChainId())
 	from, _ := types.Sender(signer, tx)
 	v, r, s := tx.RawSignatureValues()
 
@@ -1016,10 +1012,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	}
 	receipt := receipts[index]
 
-	var signer types.Signer = types.FrontierSigner{}
-	if tx.Protected() {
-		signer = types.NewEIP155Signer(tx.ChainId())
-	}
+	var signer types.Signer = types.NewEIP155Signer(tx.ChainId())
 	from, _ := types.Sender(signer, tx)
 
 	fields := map[string]interface{}{
@@ -1143,7 +1136,7 @@ func submitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 		return common.Hash{}, err
 	}
 	if tx.To() == nil {
-		signer := types.MakeSigner(b.ChainConfig(), b.CurrentBlock().Number())
+		signer := types.NewEIP155Signer(b.ChainConfig().ChainID)
 		from, err := types.Sender(signer, tx)
 		if err != nil {
 			return common.Hash{}, err
@@ -1151,7 +1144,7 @@ func submitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 		addr := crypto.CreateAddress(from, tx.Nonce())
 		log.Info("Submitted contract creation", "fullhash", tx.Hash().Hex(), "contract", addr.Hex())
 	} else {
-		//log.Info("Submitted transaction", "fullhash", tx.Hash().Hex(), "recipient", tx.To())
+		log.Info("Submitted transaction", "fullhash", tx.Hash().Hex(), "recipient", tx.To())
 	}
 	return tx.Hash(), nil
 }
@@ -1276,10 +1269,7 @@ func (s *PublicTransactionPoolAPI) PendingTransactions() ([]*RPCTransaction, err
 	}
 	transactions := make([]*RPCTransaction, 0, len(pending))
 	for _, tx := range pending {
-		var signer types.Signer = types.HomesteadSigner{}
-		if tx.Protected() {
-			signer = types.NewEIP155Signer(tx.ChainId())
-		}
+		var signer types.Signer = types.NewEIP155Signer(tx.ChainId())
 		from, _ := types.Sender(signer, tx)
 		if _, exists := accounts[from]; exists {
 			transactions = append(transactions, newRPCPendingTransaction(tx))
@@ -1312,10 +1302,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs SendTxAr
 	}
 
 	for _, p := range pending {
-		var signer types.Signer = types.HomesteadSigner{}
-		if p.Protected() {
-			signer = types.NewEIP155Signer(p.ChainId())
-		}
+		var signer types.Signer = types.NewEIP155Signer(p.ChainId())
 		wantSigHash := signer.Hash(matchTx)
 
 		if pFrom, err := types.Sender(signer, p); err == nil && pFrom == sendArgs.From && signer.Hash(p) == wantSigHash {

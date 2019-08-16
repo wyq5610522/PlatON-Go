@@ -4,6 +4,9 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/PlatONnetwork/PlatON-Go/common"
 	"github.com/PlatONnetwork/PlatON-Go/core"
 	"github.com/PlatONnetwork/PlatON-Go/core/cbfttypes"
@@ -17,9 +20,8 @@ import (
 	"github.com/PlatONnetwork/PlatON-Go/p2p/discover"
 	"github.com/PlatONnetwork/PlatON-Go/params"
 	"github.com/PlatONnetwork/PlatON-Go/rlp"
-	"github.com/deckarep/golang-set"
-	"math/big"
-	"time"
+	_ "github.com/PlatONnetwork/PlatON-Go/x/xcom"
+	mapset "github.com/deckarep/golang-set"
 )
 
 var (
@@ -185,6 +187,7 @@ func makeConfirmedBlock(v *testValidator, root common.Hash, view *viewChange, nu
 				ext.viewChangeVotes = append(ext.viewChangeVotes, makeViewChangeVote(v.validator(j).privateKey, view.Timestamp, view.BaseBlockNum, view.BaseBlockHash, view.ProposalIndex, view.ProposalAddr, j, v.validator(j).address))
 			}
 		}
+		cbftVersion := byte(0x01)
 		extra := []byte{cbftVersion}
 		bxBytes, _ := rlp.EncodeToBytes(ext.BlockExtra())
 		extra = append(extra, bxBytes...)
@@ -443,6 +446,7 @@ func makePrepareBlock(block *types.Block, owner *NodeData, view *viewChange, vie
 		ProposalIndex: uint32(owner.index),
 		ProposalAddr:  owner.address,
 	}
+
 	if view != nil {
 		p.View = view
 		p.Timestamp = view.Timestamp
@@ -450,6 +454,10 @@ func makePrepareBlock(block *types.Block, owner *NodeData, view *viewChange, vie
 	if len(viewChangeVotes) > 0 {
 		p.ViewChangeVotes = viewChangeVotes
 	}
+
+	buf, _ := p.CannibalizeBytes()
+	sign, _ := crypto.Sign(buf, owner.privateKey)
+	p.Signature.SetBytes(sign)
 	return p
 }
 
@@ -469,4 +477,29 @@ func forgeViewChangeVote(view *viewChange) *viewChangeVote {
 	sign, _ := crypto.Sign(buf, pri)
 	resp.Signature.SetBytes(sign)
 	return resp
+}
+
+func periodRemaining(index int, validators *testValidator, startTimestamp int64) int {
+	timepoint := common.Millis(time.Now())
+	startEpoch := startTimestamp * 1000
+	durationPerNode := chainConfig.Cbft.Duration * 1000
+	durationPerTurn := durationPerNode * int64(validators.len())
+
+	min := int64(index) * durationPerNode
+	max := int64(index+1) * durationPerNode
+	cur := (timepoint - startEpoch) % durationPerTurn
+
+	if cur-min < int64(3*chainConfig.Cbft.Period*1000) {
+		return 0
+	}
+	return int(max - cur)
+}
+
+func nextRound(validators *testValidator, startTimestamp int64) int {
+	timepoint := common.Millis(time.Now())
+	startEpoch := startTimestamp * 1000
+	durationPerNode := chainConfig.Cbft.Duration * 1000
+	durationPerTurn := durationPerNode * int64(validators.len())
+	cur := (timepoint - startEpoch) % durationPerTurn
+	return int(durationPerTurn - cur)
 }

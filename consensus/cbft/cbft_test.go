@@ -2,8 +2,6 @@ package cbft
 
 import (
 	"fmt"
-	"github.com/PlatONnetwork/PlatON-Go/core"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"testing"
@@ -36,6 +34,8 @@ func TestNewViewChange(t *testing.T) {
 	}
 
 	node := nodeIndexNow(validators, engine.startTimeOfEpoch)
+	time.Sleep(time.Millisecond * time.Duration(periodRemaining(node.index, validators, engine.startTimeOfEpoch)))
+	node = nodeIndexNow(validators, engine.startTimeOfEpoch)
 	viewChange := makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6), 0, gen.Hash(), uint32(node.index), node.address, nil)
 
 	//create view base of genesis
@@ -46,7 +46,7 @@ func TestNewViewChange(t *testing.T) {
 	assert.Equal(t, errDuplicationConsensusMsg, err)
 
 	//wait switch next validator
-	time.Sleep(time.Second * time.Duration(engine.config.Duration+1))
+	time.Sleep(time.Duration(engine.config.Duration+1) * time.Second)
 
 	//last validator's timestamp doesn't match current timestamp
 	viewChange = makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6), 0, gen.Hash(), uint32(node.index), node.address, nil)
@@ -54,7 +54,17 @@ func TestNewViewChange(t *testing.T) {
 	err = engine.OnViewChange(node.nodeID, viewChange)
 	assert.Equal(t, errRecvViewTimeout, err)
 
+	// viewChange really timeout
+	node = nodeIndexNow(validators, engine.startTimeOfEpoch)
+	time.Sleep(time.Duration(3*engine.config.Period) * time.Second)
+	viewChange = makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6), 0, gen.Hash(), uint32(node.index), node.address, nil)
+
+	err = engine.OnViewChange(node.nodeID, viewChange)
+	assert.Equal(t, errRecvViewTimeout, err)
+
 	//create new viewchange base on current validator
+	node = nodeIndexNow(validators, engine.startTimeOfEpoch)
+	time.Sleep(time.Millisecond * time.Duration(periodRemaining(node.index, validators, engine.startTimeOfEpoch)))
 	node = nodeIndexNow(validators, engine.startTimeOfEpoch)
 	viewChange = makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6), 0, gen.Hash(), uint32(node.index), node.address, nil)
 
@@ -65,6 +75,11 @@ func TestNewViewChange(t *testing.T) {
 	viewChange = makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6-engine.config.Duration*1e3), 0, gen.Hash(), uint32(node.index), node.address, nil)
 
 	//newest viewchange is satisfied
+	err = engine.OnViewChange(node.nodeID, viewChange)
+	assert.Equal(t, errTimestamp, err)
+
+	// error timestamp
+	viewChange = makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6+engine.config.Duration*1e3*2), 0, gen.Hash(), uint32(node.index), node.address, nil)
 	err = engine.OnViewChange(node.nodeID, viewChange)
 	assert.Equal(t, errTimestamp, err)
 
@@ -86,6 +101,14 @@ func TestNewViewChange(t *testing.T) {
 	assert.Equal(t, errNotFoundViewBlock, err)
 	time.Sleep(time.Second * time.Duration(engine.config.Period*3))
 
+	// invalid signature
+	time.Sleep(time.Millisecond * time.Duration(periodRemaining(node.index, validators, engine.startTimeOfEpoch)))
+	node = nodeIndexNow(validators, engine.startTimeOfEpoch)
+	viewChange = makeViewChange(node.privateKey, uint64(time.Now().UnixNano()/1e6), 0, gen.Hash(), uint32(node.index), node.address, nil)
+	viewChange.Signature.SetBytes(make([]byte, 64))
+	err = engine.OnViewChange(node.nodeID, viewChange)
+	assert.Equal(t, errInvalidViewChange, err)
+
 	assert.Nil(t, engine.viewChange)
 	assert.Empty(t, engine.viewChangeVotes)
 }
@@ -93,8 +116,9 @@ func TestNewViewChange(t *testing.T) {
 func TestCbft_OnSendViewChange(t *testing.T) {
 	path := path()
 	defer os.RemoveAll(path)
-	engine, _, _ := randomCBFT(path, 4)
+	engine, _, validators := randomCBFT(path, 4)
 
+	time.Sleep(time.Duration(nextRound(validators, engine.startTimeOfEpoch)) * time.Millisecond)
 	engine.OnSendViewChange()
 
 	assert.NotNil(t, engine.viewChange)
@@ -107,7 +131,8 @@ func TestCbft_ShouldSeal(t *testing.T) {
 	defer os.RemoveAll(path)
 	engine, _, validators := randomCBFT(path, 4)
 
-	seal, err := engine.ShouldSeal(100)
+	time.Sleep(time.Duration(nextRound(validators, engine.startTimeOfEpoch)) * time.Millisecond)
+	seal, err := engine.ShouldSeal(common.Millis(time.Now()))
 	assert.False(t, seal)
 	assert.NotNil(t, err)
 
@@ -285,7 +310,7 @@ func TestCbft_OnHighestPrepareBlock(t *testing.T) {
 	defer os.RemoveAll(path)
 
 	engine, _, v := randomCBFT(path, 4)
-
+	maxBlockDist := uint64(192)
 	badBlocks := createEmptyBlocks(v.validator(1).privateKey, engine.blockChain.Genesis().Hash(), engine.blockChain.Genesis().NumberU64(), int(maxBlockDist+1))
 
 	assert.Error(t, engine.OnHighestPrepareBlock(v.validator(1).nodeID, &highestPrepareBlock{CommitedBlock: badBlocks}))
@@ -866,6 +891,14 @@ func TestCbft_OnNewPrepareBlock(t *testing.T) {
 	p := makePrepareBlock(block, node, nil, nil)
 	assert.Nil(t, engine.OnNewPrepareBlock(node.nodeID, p, propagation))
 
+	// test verify prepareBlock sign
+	p = makePrepareBlock(createBlock(node.privateKey, block.Hash(), block.NumberU64()+1), node, nil, nil)
+	p.ProposalIndex = 3
+	p.ProposalAddr = validators.validator(3).address
+	assert.EqualError(t, engine.OnNewPrepareBlock(node.nodeID, p, propagation), "sign error")
+	p.ProposalIndex = uint32(node.index)
+	p.ProposalAddr = node.address
+
 	viewChange, _ := engine.newViewChange() // build viewChange
 	p.Timestamp = viewChange.Timestamp + 1
 	// test errFutileBlock
@@ -1027,7 +1060,7 @@ func TestCbft_OnGetHighestConfirmedStatus(t *testing.T) {
 	peerId := randomID()
 
 	testCases := []struct {
-		msg  *getLatestStatus
+		msg *getLatestStatus
 	}{
 		{msg: &getLatestStatus{Highest: 1, Type: 0}},
 		{msg: &getLatestStatus{Highest: 1, Type: 1}},
@@ -1049,32 +1082,16 @@ func TestCbft_OnHighestConfirmedStatus(t *testing.T) {
 	engine.handler = mockHandler
 	peerId := randomID()
 
-	testCases := []struct{
+	testCases := []struct {
 		msg *latestStatus
 	}{
-		{msg: &latestStatus{Highest: 1, Type:0,}},
-		{msg: &latestStatus{Highest: 1, Type:1,}},
-		{msg: &latestStatus{Highest: 0, Type:0,}},
-		{msg: &latestStatus{Highest: 0, Type:1,}},
+		{msg: &latestStatus{Highest: 1, Type: 0}},
+		{msg: &latestStatus{Highest: 1, Type: 1}},
+		{msg: &latestStatus{Highest: 0, Type: 0}},
+		{msg: &latestStatus{Highest: 0, Type: 1}},
 	}
 	for _, v := range testCases {
 		err := engine.OnLatestStatus(peerId, v.msg)
 		assert.Nil(t, err)
 	}
-}
-
-func TestGen(t *testing.T) {
-	buf, err := ioutil.ReadFile("/home/yangzhou/platon/node1/genesis.json")
-	if err != nil {
-		t.Log(err)
-	}
-
-	var gen core.Genesis
-	err = gen.UnmarshalJSON(buf)
-	if err != nil {
-		t.Log(err)
-	}
-
-	t.Log("success")
-
 }

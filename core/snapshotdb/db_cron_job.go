@@ -1,7 +1,6 @@
 package snapshotdb
 
 import (
-	"log"
 	"sync/atomic"
 )
 
@@ -21,13 +20,24 @@ func (c *count32) get() int32 {
 	return atomic.LoadInt32((*int32)(c))
 }
 
+const (
+	snapshotUnLock = 0
+	snapshotLock   = 1
+)
+
 func (s *snapshotDB) schedule() {
-	if counter.get() == 60 || s.current.HighestNum.Int64()-s.current.BaseNum.Int64() >= 100 {
-		if _, err := s.Compaction(); err != nil {
-			log.Print("[SnapshotDB]compaction fail:", err)
+	// Compaction condition , last Compaction execute time gt than 60s or commit block num gt than 100
+	if counter.get() >= 60 || s.current.HighestNum.Int64()-s.current.BaseNum.Int64() >= 100 {
+		//only one compaction can execute
+		if atomic.CompareAndSwapInt32(&s.snapshotLockC, snapshotUnLock, snapshotLock) {
+			if err := s.Compaction(); err != nil {
+				logger.Error("compaction fail", "err", err)
+			}
+			counter.reset()
+			atomic.StoreInt32(&s.snapshotLockC, snapshotUnLock)
+			return
 		}
-		counter.reset()
-	} else {
-		counter.increment()
+		logger.Info("snapshotDB is still Compaction Lock,wait for next schedule")
 	}
+	counter.increment()
 }

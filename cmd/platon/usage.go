@@ -65,7 +65,7 @@ type flagGroup struct {
 // AppHelpFlagGroups is the application flags, grouped by functionality.
 var AppHelpFlagGroups = []flagGroup{
 	{
-		Name: "ETHEREUM",
+		Name: "PLATON",
 		Flags: []cli.Flag{
 			configFileFlag,
 			utils.DataDirFlag,
@@ -175,16 +175,10 @@ var AppHelpFlagGroups = []flagGroup{
 	{
 		Name: "MINER",
 		Flags: []cli.Flag{
-			utils.MiningEnabledFlag,
-			utils.MinerThreadsFlag,
-			utils.MinerNotifyFlag,
 			utils.MinerGasPriceFlag,
 			utils.MinerGasTargetFlag,
 			utils.MinerGasLimitFlag,
-			utils.MinerEtherbaseFlag,
 			utils.MinerExtraDataFlag,
-			utils.MinerRecommitIntervalFlag,
-			utils.MinerNoVerfiyFlag,
 		},
 	},
 	{
@@ -205,7 +199,6 @@ var AppHelpFlagGroups = []flagGroup{
 	{
 		Name: "LOGGING AND DEBUGGING",
 		Flags: append([]cli.Flag{
-			utils.FakePoWFlag,
 			utils.NoCompactionFlag,
 		}, debug.Flags...),
 	},
@@ -228,34 +221,33 @@ var AppHelpFlagGroups = []flagGroup{
 	{
 		Name: "DEPRECATED",
 		Flags: []cli.Flag{
-			utils.MinerLegacyThreadsFlag,
 			utils.MinerLegacyGasTargetFlag,
 			utils.MinerLegacyGasPriceFlag,
-			utils.MinerLegacyEtherbaseFlag,
 			utils.MinerLegacyExtraDataFlag,
 		},
 	},
-	{
-		Name: "MPC COMPUTE",
-		Flags: []cli.Flag{
-			utils.MPCEnabledFlag,
-			utils.MPCActorFlag,
-			utils.MPCIceFileFlag,
-		},
-	},
-	{
-		Name: "VC COMPUTE",
-		Flags: []cli.Flag{
-			utils.VCEnabledFlag,
-			utils.VCActorFlag,
-			utils.VCPasswordFlag,
-		},
-	},
+	//{
+	//	Name: "MPC COMPUTE",
+	//	Flags: []cli.Flag{
+	//		utils.MPCEnabledFlag,
+	//		utils.MPCActorFlag,
+	//		utils.MPCIceFileFlag,
+	//	},
+	//},
+	//{
+	//	Name: "VC COMPUTE",
+	//	Flags: []cli.Flag{
+	//		utils.VCEnabledFlag,
+	//		utils.VCActorFlag,
+	//		utils.VCPasswordFlag,
+	//	},
+	//},
 	{
 		Name: "CBFT",
 		Flags: []cli.Flag{
 			utils.CbftBlockIntervalFlag,
 			utils.CbftBreakpointFlag,
+			utils.WalEnabledFlag,
 		},
 	},
 	{

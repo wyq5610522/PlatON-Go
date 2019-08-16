@@ -20,8 +20,6 @@ package eth
 import (
 	"errors"
 	"fmt"
-	"github.com/PlatONnetwork/PlatON-Go/consensus/cbft"
-	"github.com/PlatONnetwork/PlatON-Go/p2p/discover"
 	"math/big"
 	"runtime"
 	"sync"
@@ -31,6 +29,7 @@ import (
 	"github.com/PlatONnetwork/PlatON-Go/common"
 	"github.com/PlatONnetwork/PlatON-Go/common/hexutil"
 	"github.com/PlatONnetwork/PlatON-Go/consensus"
+	"github.com/PlatONnetwork/PlatON-Go/consensus/cbft"
 	"github.com/PlatONnetwork/PlatON-Go/core"
 	"github.com/PlatONnetwork/PlatON-Go/core/bloombits"
 	"github.com/PlatONnetwork/PlatON-Go/core/rawdb"
@@ -46,6 +45,7 @@ import (
 	"github.com/PlatONnetwork/PlatON-Go/miner"
 	"github.com/PlatONnetwork/PlatON-Go/node"
 	"github.com/PlatONnetwork/PlatON-Go/p2p"
+	"github.com/PlatONnetwork/PlatON-Go/p2p/discover"
 	"github.com/PlatONnetwork/PlatON-Go/params"
 	"github.com/PlatONnetwork/PlatON-Go/rlp"
 	"github.com/PlatONnetwork/PlatON-Go/rpc"
@@ -87,8 +87,8 @@ type Ethereum struct {
 	protocolManager *ProtocolManager
 	lesServer       LesServer
 	// modify
-	mpcPool *core.MPCPool
-	vcPool  *core.VCPool
+	//mpcPool *core.MPCPool
+	//vcPool  *core.VCPool
 
 	// DB interfaces
 	chainDb ethdb.Database // Block chain database
@@ -102,8 +102,8 @@ type Ethereum struct {
 
 	APIBackend *EthAPIBackend
 
-	miner     *miner.Miner
-	gasPrice  *big.Int
+	miner         *miner.Miner
+	gasPrice      *big.Int
 	networkID     uint64
 	netRPCService *ethapi.PublicNetAPI
 
@@ -125,7 +125,7 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 	if !config.SyncMode.IsValid() {
 		return nil, fmt.Errorf("invalid sync mode %d", config.SyncMode)
 	}
-	if config.MinerGasPrice == nil || config.MinerGasPrice.Cmp(common.Big0) <= 0 {
+	if config.MinerGasPrice == nil || config.MinerGasPrice.Cmp(common.Big0) <= 0 || config.MinerGasPrice.Cmp(DefaultConfig.MinerGasPrice) <= 0 {
 		log.Warn("Sanitizing invalid miner gas price", "provided", config.MinerGasPrice, "updated", DefaultConfig.MinerGasPrice)
 		config.MinerGasPrice = new(big.Int).Set(DefaultConfig.MinerGasPrice)
 	}
@@ -134,6 +134,10 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// set snapshotdb path
+	//snapshotdb.SetDBPath(ctx)
+
 	chainConfig, genesisHash, genesisErr := core.SetupGenesisBlock(chainDb, config.Genesis)
 	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
 		return nil, genesisErr
@@ -158,10 +162,10 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 
 	if !config.SkipBcVersionCheck {
 		bcVersion := rawdb.ReadDatabaseVersion(chainDb)
-		if bcVersion != core.BlockChainVersion && bcVersion != 0 {
-			return nil, fmt.Errorf("Blockchain DB version mismatch (%d / %d).\n", bcVersion, core.BlockChainVersion)
+		if bcVersion != config.BlockChainVersion && bcVersion != 0 {
+			return nil, fmt.Errorf("Blockchain DB version mismatch (%d / %d).\n", bcVersion, config.BlockChainVersion)
 		}
-		rawdb.WriteDatabaseVersion(chainDb, core.BlockChainVersion)
+		rawdb.WriteDatabaseVersion(chainDb, config.BlockChainVersion)
 	}
 	var (
 		vmConfig = vm.Config{
@@ -170,7 +174,20 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 			EVMInterpreter:          config.EVMInterpreter,
 			ConsoleOutput:           config.Debug,
 		}
-		cacheConfig = &core.CacheConfig{Disabled: config.NoPruning, TrieNodeLimit: config.TrieCache, TrieTimeLimit: config.TrieTimeout}
+		cacheConfig = &core.CacheConfig{Disabled: config.NoPruning, TrieNodeLimit: config.TrieCache, TrieTimeLimit: config.TrieTimeout,
+			BodyCacheLimit: config.BodyCacheLimit, BlockCacheLimit: config.BlockCacheLimit,
+			MaxFutureBlocks: config.MaxFutureBlocks, BadBlockLimit: config.BadBlockLimit,
+			TriesInMemory: config.TriesInMemory, DefaultTxsCacheSize: config.DefaultTxsCacheSize,
+			DefaultBroadcastInterval: config.DefaultBroadcastInterval,
+		}
+
+		minningConfig = &core.MiningConfig{MiningLogAtDepth: config.MiningLogAtDepth, TxChanSize: config.TxChanSize,
+			ChainHeadChanSize: config.ChainHeadChanSize, ChainSideChanSize: config.ChainSideChanSize,
+			ResultQueueSize: config.ResultQueueSize, ResubmitAdjustChanSize: config.ResubmitAdjustChanSize,
+			MinRecommitInterval: config.MinRecommitInterval, MaxRecommitInterval: config.MaxRecommitInterval,
+			IntervalAdjustRatio: config.IntervalAdjustRatio, IntervalAdjustBias: config.IntervalAdjustBias,
+			StaleThreshold: config.StaleThreshold, DefaultCommitRatio: config.DefaultCommitRatio,
+		}
 	)
 
 	eth.blockchain, err = core.NewBlockChain(chainDb, cacheConfig, eth.chainConfig, eth.engine, vmConfig, eth.shouldPreserve)
@@ -197,25 +214,27 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 	log.Debug("eth.txPool:::::", "txPool", eth.txPool)
 	// mpcPool deal with mpc transactions
 	// modify By J
-	if config.MPCPool.Journal != "" {
-		config.MPCPool.Journal = ctx.ResolvePath(config.MPCPool.Journal)
-	} else {
-		config.MPCPool.Journal = ctx.ResolvePath(core.DefaultMPCPoolConfig.Journal)
-	}
-	if config.MPCPool.Rejournal == 0 {
-		config.MPCPool.Rejournal = core.DefaultMPCPoolConfig.Rejournal
-	}
-	if config.MPCPool.Lifetime == 0 {
-		config.MPCPool.Lifetime = core.DefaultMPCPoolConfig.Lifetime
-	}
-	eth.mpcPool = core.NewMPCPool(config.MPCPool, eth.chainConfig, eth.blockchain)
-	eth.vcPool = core.NewVCPool(config.VCPool, eth.chainConfig, eth.blockchain)
+	//if config.MPCPool.Journal != "" {
+	//	config.MPCPool.Journal = ctx.ResolvePath(config.MPCPool.Journal)
+	//} else {
+	//	config.MPCPool.Journal = ctx.ResolvePath(core.DefaultMPCPoolConfig.Journal)
+	//}
+	//if config.MPCPool.Rejournal == 0 {
+	//	config.MPCPool.Rejournal = core.DefaultMPCPoolConfig.Rejournal
+	//}
+	//if config.MPCPool.Lifetime == 0 {
+	//	config.MPCPool.Lifetime = core.DefaultMPCPoolConfig.Lifetime
+	//}
+	//eth.mpcPool = core.NewMPCPool(config.MPCPool, eth.chainConfig, eth.blockchain)
+	//eth.vcPool = core.NewVCPool(config.VCPool, eth.chainConfig, eth.blockchain)
 
 	// modify by platon remove consensusCache
 	//var consensusCache *cbft.Cache = cbft.NewCache(eth.blockchain)
-	eth.miner = miner.New(eth, eth.chainConfig, eth.EventMux(), eth.engine, config.MinerRecommit, config.MinerGasFloor, config.MinerGasCeil, eth.isLocalBlock, blockChainCache)
+	eth.miner = miner.New(eth, eth.chainConfig, minningConfig, eth.EventMux(), eth.engine, config.MinerRecommit,
+		config.MinerGasFloor, config.MinerGasCeil, eth.isLocalBlock, blockChainCache)
 	eth.miner.SetExtra(makeExtraData(config.MinerExtraData))
 
+	reactor := core.NewBlockChainReactor(chainConfig.Cbft.PrivateKey, eth.EventMux())
 
 	if bft, ok := eth.engine.(consensus.Bft); ok {
 		if cbftEngine, ok := bft.(*cbft.Cbft); ok {
@@ -229,16 +248,18 @@ func New(ctx *node.ServiceContext, config *Config) (*Ethereum, error) {
 			// - inner (via inner contract)
 			// - ppos
 			log.Debug("Validator mode", "mode", chainConfig.Cbft.ValidatorMode)
-			if chainConfig.Cbft.ValidatorMode == "" || chainConfig.Cbft.ValidatorMode == "static" {
+			if chainConfig.Cbft.ValidatorMode == "" || chainConfig.Cbft.ValidatorMode == common.STATIC_VALIDATOR_MODE {
 				agency = cbft.NewStaticAgency(chainConfig.Cbft.InitialNodes)
-			} else if chainConfig.Cbft.ValidatorMode == "inner" {
+				reactor.Start(common.STATIC_VALIDATOR_MODE)
+			} else if chainConfig.Cbft.ValidatorMode == common.INNER_VALIDATOR_MODE {
 				blocksPerNode := int(int64(chainConfig.Cbft.Duration) / int64(chainConfig.Cbft.Period))
 				offset := blocksPerNode * 2
 				agency = cbft.NewInnerAgency(chainConfig.Cbft.InitialNodes, eth.blockchain, blocksPerNode, offset)
-			} else if chainConfig.Cbft.ValidatorMode == "ppos" {
-				// TODO init reactor
-				reactor := core.NewBlockChainReactor(chainConfig.Cbft.PrivateKey, eth.EventMux())
-				handlePlugin(reactor, nil)
+				reactor.Start(common.INNER_VALIDATOR_MODE)
+			} else if chainConfig.Cbft.ValidatorMode == common.PPOS_VALIDATOR_MODE {
+				reactor.Start(common.PPOS_VALIDATOR_MODE)
+				reactor.SetVRF_handler(xcom.NewVrfHandler(eth.blockchain.Genesis().Nonce()))
+				handlePlugin(reactor)
 				agency = reactor
 			}
 
@@ -307,6 +328,17 @@ func CreateConsensusEngine(ctx *node.ServiceContext, chainConfig *params.ChainCo
 		chainConfig.Cbft.LegalCoefficient = cbftConfig.LegalCoefficient
 		chainConfig.Cbft.Duration = cbftConfig.Duration
 		chainConfig.Cbft.BlockInterval = cbftConfig.BlockInterval
+		chainConfig.Cbft.WalEnabled = cbftConfig.WalMode
+
+		chainConfig.Cbft.PeerMsgQueueSize = cbftConfig.PeerMsgQueueSize
+		chainConfig.Cbft.EvidenceDir = cbftConfig.EvidenceDir
+		chainConfig.Cbft.MaxResetCacheSize = cbftConfig.MaxResetCacheSize
+		chainConfig.Cbft.MaxQueuesLimit = cbftConfig.MaxQueuesLimit
+		chainConfig.Cbft.MaxBlockDist = cbftConfig.MaxBlockDist
+		chainConfig.Cbft.MaxPingLatency = cbftConfig.MaxPingLatency
+		chainConfig.Cbft.MaxAvgLatency = cbftConfig.MaxAvgLatency
+		chainConfig.Cbft.CbftVersion = cbftConfig.CbftVersion
+		chainConfig.Cbft.Remaining = cbftConfig.Remaining
 		return cbft.New(chainConfig.Cbft, eventMux, ctx)
 	}
 	return nil
@@ -414,21 +446,8 @@ func (s *Ethereum) shouldPreserve(block *types.Block) bool {
 	return s.isLocalBlock(block)
 }
 
-// StartMining starts the miner with the given number of CPU threads. If mining
-// is already running, this method adjust the number of threads allowed to use
-// and updates the minimum price required by the transaction pool.
-func (s *Ethereum) StartMining(threads int) error {
-	// Update the thread count within the consensus engine
-	type threaded interface {
-		SetThreads(threads int)
-	}
-	if th, ok := s.engine.(threaded); ok {
-		log.Info("Updated mining threads", "threads", threads)
-		if threads == 0 {
-			threads = -1 // Disable the miner from within
-		}
-		th.SetThreads(threads)
-	}
+//start mining
+func (s *Ethereum) StartMining() error {
 	// If the miner was not running, initialize it
 	if !s.IsMining() {
 		// Propagate the initial price point to the transaction pool
@@ -449,14 +468,6 @@ func (s *Ethereum) StartMining(threads int) error {
 // StopMining terminates the miner, both at the consensus engine level as well as
 // at the block creation level.
 func (s *Ethereum) StopMining() {
-	// Update the thread count within the consensus engine
-	type threaded interface {
-		SetThreads(threads int)
-	}
-	if th, ok := s.engine.(threaded); ok {
-		th.SetThreads(-1)
-	}
-	// Stop the block creating itself
 	s.miner.Stop()
 }
 
@@ -510,6 +521,8 @@ func (s *Ethereum) Start(srvr *p2p.Server) error {
 
 	if cbftEngine, ok := s.engine.(consensus.Bft); ok {
 		cbftEngine.SetPrivateKey(srvr.Config.PrivateKey)
+		core.GetReactorInstance().SetPrivateKey(srvr.Config.PrivateKey)
+
 		if flag := cbftEngine.IsConsensusNode(); flag {
 			// self: s.chainConfig.Cbft.NodeID
 			// list: s.chainConfig.Cbft.InitialNodes
@@ -530,7 +543,7 @@ func (s *Ethereum) Start(srvr *p2p.Server) error {
 				srvr.AddConsensusPeer(discover.NewNode(n.ID, n.IP, n.UDP, n.TCP))
 			}
 		}
-		s.StartMining(1)
+		s.StartMining()
 	}
 	srvr.StartWatching(s.eventMux)
 
@@ -572,9 +585,23 @@ func (s *Ethereum) Stop() error {
 
 	s.chainDb.Close()
 	close(s.shutdownChan)
+	core.GetReactorInstance().Close()
 	return nil
 }
-// TODO RegisterPlugin one by one
-func handlePlugin (reactor *core.BlockChainReactor, db xcom.SnapshotDB) {
-	reactor.RegisterPlugin(xcom.StakingRule, xplugin.StakingInstance(db))
+
+// RegisterPlugin one by one
+func handlePlugin(reactor *core.BlockChainReactor) {
+	reactor.RegisterPlugin(xcom.SlashingRule, xplugin.SlashInstance())
+	xplugin.SlashInstance().SetDecodeEvidenceFun(cbft.NewEvidences)
+	reactor.RegisterPlugin(xcom.StakingRule, xplugin.StakingInstance())
+	reactor.RegisterPlugin(xcom.RestrictingRule, xplugin.RestrictingInstance())
+	reactor.RegisterPlugin(xcom.RewardRule, xplugin.RewardMgrInstance())
+	reactor.RegisterPlugin(xcom.GovernanceRule, xplugin.GovPluginInstance())
+
+	reactor.SetPluginEventMux()
+
+	// set rule order
+	reactor.SetBeginRule([]int{xcom.SlashingRule})
+	reactor.SetEndRule([]int{xcom.RestrictingRule, xcom.RewardRule, xcom.GovernanceRule, xcom.StakingRule})
+
 }

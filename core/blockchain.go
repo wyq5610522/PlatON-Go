@@ -48,23 +48,36 @@ var (
 	ErrNoGenesis = errors.New("Genesis not found in chain")
 )
 
-const (
-	bodyCacheLimit      = 256
-	blockCacheLimit     = 256
-	maxFutureBlocks     = 256
-	badBlockLimit       = 10
-	triesInMemory       = 128
-
-	// BlockChainVersion ensures that an incompatible database forces a resync from scratch.
-	BlockChainVersion = 3
-)
-
 // CacheConfig contains the configuration values for the trie caching/pruning
 // that's resident in a blockchain.
 type CacheConfig struct {
 	Disabled      bool          // Whether to disable trie write caching (archive node)
 	TrieNodeLimit int           // Memory limit (MB) at which to flush the current in-memory trie to disk
 	TrieTimeLimit time.Duration // Time limit after which to flush the current in-memory trie to disk
+
+	BodyCacheLimit           int
+	BlockCacheLimit          int
+	MaxFutureBlocks          int
+	BadBlockLimit            int
+	TriesInMemory            int
+	DefaultTxsCacheSize      int
+	DefaultBroadcastInterval time.Duration
+}
+
+// mining related configuration
+type MiningConfig struct {
+	MiningLogAtDepth       uint
+	TxChanSize             int
+	ChainHeadChanSize      int
+	ChainSideChanSize      int
+	ResultQueueSize        int
+	ResubmitAdjustChanSize int
+	MinRecommitInterval    time.Duration
+	MaxRecommitInterval    time.Duration
+	IntervalAdjustRatio    float64
+	IntervalAdjustBias     float64
+	StaleThreshold         uint64
+	DefaultCommitRatio     float64
 }
 
 // BlockChain represents the canonical chain given a database with a genesis
@@ -133,15 +146,22 @@ type BlockChain struct {
 func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *params.ChainConfig, engine consensus.Engine, vmConfig vm.Config, shouldPreserve func(block *types.Block) bool) (*BlockChain, error) {
 	if cacheConfig == nil {
 		cacheConfig = &CacheConfig{
-			TrieNodeLimit: 256 * 1024 * 1024,
-			TrieTimeLimit: 5 * time.Minute,
+			TrieNodeLimit:            256 * 1024 * 1024,
+			TrieTimeLimit:            5 * time.Minute,
+			BodyCacheLimit:           256,
+			BlockCacheLimit:          256,
+			MaxFutureBlocks:          256,
+			BadBlockLimit:            10,
+			TriesInMemory:            128,
+			DefaultTxsCacheSize:      20,
+			DefaultBroadcastInterval: 100 * time.Millisecond,
 		}
 	}
-	bodyCache, _ := lru.New(bodyCacheLimit)
-	bodyRLPCache, _ := lru.New(bodyCacheLimit)
-	blockCache, _ := lru.New(blockCacheLimit)
-	futureBlocks, _ := lru.New(maxFutureBlocks)
-	badBlocks, _ := lru.New(badBlockLimit)
+	bodyCache, _ := lru.New(cacheConfig.BodyCacheLimit)
+	bodyRLPCache, _ := lru.New(cacheConfig.BodyCacheLimit)
+	blockCache, _ := lru.New(cacheConfig.BlockCacheLimit)
+	futureBlocks, _ := lru.New(cacheConfig.MaxFutureBlocks)
+	badBlocks, _ := lru.New(cacheConfig.BadBlockLimit)
 
 	bc := &BlockChain{
 		chainConfig:    chainConfig,
@@ -420,6 +440,10 @@ func (bc *BlockChain) repair(head **types.Block) error {
 			log.Info("Rewound blockchain to past state", "number", (*head).Number(), "hash", (*head).Hash())
 			return nil
 		}
+
+		num := (*head).NumberU64() - 1
+		fmt.Println(num)
+
 		// Otherwise rewind one block and recheck state availability there
 		(*head) = bc.GetBlock((*head).ParentHash(), (*head).NumberU64()-1)
 	}
@@ -653,8 +677,11 @@ func (bc *BlockChain) Stop() {
 	//  - HEAD-127: So we have a hard limit on the number of blocks reexecuted
 	if !bc.cacheConfig.Disabled {
 		triedb := bc.stateCache.TrieDB()
+		if 0 >= bc.cacheConfig.TriesInMemory {
+			bc.cacheConfig.TriesInMemory = 128
+		}
 
-		for _, offset := range []uint64{0, 1, triesInMemory - 1} {
+		for _, offset := range []uint64{0, 1, (uint64)(bc.cacheConfig.TriesInMemory - 1)} {
 			if number := bc.CurrentBlock().NumberU64(); number > offset {
 				recent := bc.GetBlockByNumber(number - offset)
 
@@ -728,8 +755,7 @@ func (bc *BlockChain) Rollback(chain []common.Hash) {
 
 // SetReceiptsData computes all the non-consensus fields of the receipts
 func SetReceiptsData(config *params.ChainConfig, block *types.Block, receipts types.Receipts) error {
-	signer := types.MakeSigner(config, block.Number())
-
+	signer := types.NewEIP155Signer(config.ChainID)
 	transactions, logIndex := block.Transactions(), uint(0)
 	if len(transactions) != len(receipts) {
 		return errors.New("transaction and receipt count mismatch")
@@ -886,7 +912,7 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 	// Irrelevant of the canonical status, write the block itself to the database
 	rawdb.WriteBlock(bc.db, block)
 
-	root, err := state.Commit(bc.chainConfig.IsEIP158(block.Number()))
+	root, err := state.Commit(true)
 	if err != nil {
 		log.Error("check block is EIP158 error", "hash", block.Hash(), "number", block.NumberU64())
 		return NonStatTy, err
@@ -906,7 +932,11 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 		triedb.Reference(root, common.Hash{}) // metadata reference to keep trie alive
 		bc.triegc.Push(root, -int64(block.NumberU64()))
 
-		if current := block.NumberU64(); current > triesInMemory {
+		if 0 >= bc.cacheConfig.TriesInMemory {
+			bc.cacheConfig.TriesInMemory = 128
+		}
+
+		if current := block.NumberU64(); current > (uint64)(bc.cacheConfig.TriesInMemory) {
 			// If we exceeded our memory allowance, flush matured singleton nodes to disk
 			var (
 				nodes, imgs = triedb.Size()
@@ -916,15 +946,16 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 				triedb.Cap(limit - ethdb.IdealBatchSize)
 			}
 			// Find the next state trie we need to commit
-			header := bc.GetHeaderByNumber(current - triesInMemory)
+			header := bc.GetHeaderByNumber(current - (uint64)(bc.cacheConfig.TriesInMemory))
 			chosen := header.Number.Uint64()
 
 			// If we exceeded out time allowance, flush an entire trie to disk
 			if bc.gcproc > bc.cacheConfig.TrieTimeLimit {
 				// If we're exceeding limits but haven't reached a large enough memory gap,
 				// warn the user that the system is becoming unstable.
-				if chosen < lastWrite+triesInMemory && bc.gcproc >= 2*bc.cacheConfig.TrieTimeLimit {
-					log.Info("State in memory for too long, committing", "time", bc.gcproc, "allowance", bc.cacheConfig.TrieTimeLimit, "optimum", float64(chosen-lastWrite)/triesInMemory)
+				if chosen < lastWrite+(uint64)(bc.cacheConfig.TriesInMemory) && bc.gcproc >= 2*bc.cacheConfig.TrieTimeLimit {
+					log.Info("State in memory for too long, committing", "time", bc.gcproc, "allowance", bc.cacheConfig.TrieTimeLimit, "optimum",
+						float64(chosen-lastWrite)/(float64)(bc.cacheConfig.TriesInMemory))
 				}
 				// Flush an entire trie and restart the counters
 				triedb.Commit(header.Root, true)
@@ -996,14 +1027,14 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 		bc.insert(block)
 
 		// parse block and retrieves txs
-		receipts := bc.GetReceiptsByHash(block.Hash())
-		if MPC_POOL != nil{
-			MPC_POOL.InjectTxs(block, receipts, bc, state)
-		}
+		//receipts := bc.GetReceiptsByHash(block.Hash())
+		//if MPC_POOL != nil{
+		//	MPC_POOL.InjectTxs(block, receipts, bc, state)
+		//}
 
-		if VC_POOL != nil {
-			VC_POOL.InjectTxs(block, receipts, bc, state)
-		}
+		//if VC_POOL != nil {
+		//	VC_POOL.InjectTxs(block, receipts, bc, state)
+		//}
 
 	}
 	bc.futureBlocks.Remove(block.Hash())
@@ -1069,7 +1100,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 	defer close(abort)
 
 	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
-	senderCacher.recoverFromBlocks(types.MakeSigner(bc.chainConfig, chain[0].Number()), chain)
+	senderCacher.recoverFromBlocks(types.NewEIP155Signer(bc.chainConfig.ChainID), chain)
 
 	// Iterate over the blocks and insert when the verifier permits
 	for i, block := range chain {
@@ -1225,11 +1256,14 @@ func (bc *BlockChain) insertChain(chain types.Blocks) (int, []interface{}, []*ty
 //joey.lyu
 func (bc *BlockChain) ProcessDirectly(block *types.Block, state *state.StateDB, parent *types.Block) (types.Receipts, error) {
 	// Process block using the parent state as reference point.
+	start := time.Now()
 	receipts, logs, usedGas, err := bc.processor.Process(block, state, bc.vmConfig)
 	if err != nil {
+		log.Error("Failed to ProcessDirectly", "blockNumber", block.Number(), "blockHash", block.Hash().Hex(), "err", err)
 		bc.reportBlock(block, receipts, err)
 		return nil, err
 	}
+	log.Debug("execute block time", "blockNumber", block.Number(), "blockHash", block.Hash().Hex(), "time", time.Since(start))
 
 	// Validate the state using the default validator
 	err = bc.Validator().ValidateState(block, parent, state, receipts, usedGas)
@@ -1590,6 +1624,9 @@ func (bc *BlockChain) GetHeaderByNumber(number uint64) *types.Header {
 
 // Config retrieves the blockchain's chain configuration.
 func (bc *BlockChain) Config() *params.ChainConfig { return bc.chainConfig }
+
+// Config retrieves the blockchain's chain configuration.
+func (bc *BlockChain) CacheConfig() *CacheConfig { return bc.cacheConfig }
 
 // Engine retrieves the blockchain's consensus engine.
 func (bc *BlockChain) Engine() consensus.Engine { return bc.engine }

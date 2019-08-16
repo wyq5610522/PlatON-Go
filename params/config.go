@@ -19,9 +19,11 @@ package params
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/PlatONnetwork/PlatON-Go/common"
 	"github.com/PlatONnetwork/PlatON-Go/p2p/discover"
-	"math/big"
 )
 
 // Genesis hashes to enforce below configs on.
@@ -33,7 +35,44 @@ var (
 	InnerDevnetGenesisHash  = common.HexToHash("0xc2d90f565b3c6dc16234c48978da62c2c20e15875644e9843d26a871860fd736")
 )
 
+var TrustedCheckpoints = map[common.Hash]*TrustedCheckpoint{
+	MainnetGenesisHash:      MainnetTrustedCheckpoint,
+	TestnetGenesisHash:      TestnetTrustedCheckpoint,
+	BeatnetGenesisHash:      BetanetTrustedCheckpoint,
+	InnerTestnetGenesisHash: InnerTestnetTrustedCheckpoint,
+	InnerDevnetGenesisHash:  InnerDevnetTrustedCheckpoint,
+}
+
 var (
+	// TODO need finish
+	initialMainNetConsensusNodes = []string{
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16791",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16792",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16793",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16794",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16795",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16796",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16797",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16798",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16799",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16800",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16801",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16802",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16803",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:16804",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26790",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26791",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26792",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26793",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26794",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26795",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26796",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26797",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26798",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26799",
+		"enode://1f3a8672348ff6b789e416762ad53e69063138b8eb4d8780101658f24b2369f1a8e09499226b467d8bc0c4e03e1dc903df857eeb3c67733d21b6aaee2840e429@platon.network:26799",
+	}
+
 	initialTestnetConsensusNodes = []string{
 		"enode://a6ef31a2006f55f5039e23ccccef343e735d56699bde947cfe253d441f5f291561640a8e2bbaf8a85a8a367b939efcef6f80ae28d2bd3d0b21bdac01c3aa6f2f@test-sea.platon.network:16791", //TEST-SEA
 		"enode://d124e660938dc3fd63d913ff753fafc262764b22294431e760b572b0b58d5e6b813b32ccbacc326c03171542ae0ff8ff6528625a2d612e0c49240f111eba3c22@test-sg.platon.network:16792",  //TEST-SG
@@ -70,19 +109,21 @@ var (
 
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(101),
-		EmptyBlock:          "on",
-		HomesteadBlock:      big.NewInt(1150000),
-		DAOForkBlock:        big.NewInt(1920000),
-		DAOForkSupport:      true,
-		EIP150Block:         big.NewInt(2463000),
-		EIP150Hash:          common.HexToHash("0x2086799aeebeae135c246c65021c82b4e15a2c451340993aacfd2751886514f0"),
-		EIP155Block:         big.NewInt(2675000),
-		EIP158Block:         big.NewInt(2675000),
-		ByzantiumBlock:      big.NewInt(4370000),
-		ConstantinopleBlock: nil,
+		ChainID:     big.NewInt(101),
+		EmptyBlock:  "on",
+		EIP155Block: big.NewInt(2675000),
 		Cbft: &CbftConfig{
-			InitialNodes: convertNodeUrl(initialTestnetConsensusNodes),
+			InitialNodes:      convertNodeUrl(initialMainNetConsensusNodes),
+			PeerMsgQueueSize:  1024,
+			EvidenceDir:       "evidenceDir",
+			MaxResetCacheSize: 512,
+			MaxQueuesLimit:    4096,
+			MaxBlockDist:      192,
+			MaxPingLatency:    5000,
+			MaxAvgLatency:     2000,
+			CbftVersion:       byte(0x01),
+			Remaining:         50 * time.Millisecond,
+			ValidatorMode:     "ppos",
 		},
 		VMInterpreter: "wasm",
 	}
@@ -98,55 +139,20 @@ var (
 
 	// TestnetChainConfig contains the chain parameters to run a node on the Alpha test network.
 	TestnetChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(103),
-		EmptyBlock:          "on",
-		HomesteadBlock:      big.NewInt(1),
-		DAOForkBlock:        nil,
-		DAOForkSupport:      false,
-		EIP150Block:         big.NewInt(2),
-		EIP150Hash:          common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		EIP155Block:         big.NewInt(3),
-		EIP158Block:         big.NewInt(3),
-		ByzantiumBlock:      big.NewInt(4),
-		ConstantinopleBlock: nil,
+		ChainID:     big.NewInt(103),
+		EmptyBlock:  "on",
+		EIP155Block: big.NewInt(3),
 		Cbft: &CbftConfig{
-			InitialNodes: convertNodeUrl(initialTestnetConsensusNodes),
-		},
-		VMInterpreter: "wasm",
-	}
-
-	// InnerTestnetChainConfig contains the chain parameters to run a node on the inner test network.
-	InnerTestnetChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(203),
-		HomesteadBlock:      big.NewInt(1),
-		DAOForkBlock:        nil,
-		DAOForkSupport:      false,
-		EIP150Block:         big.NewInt(2),
-		EIP150Hash:          common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		EIP155Block:         big.NewInt(3),
-		EIP158Block:         big.NewInt(3),
-		ByzantiumBlock:      big.NewInt(4),
-		ConstantinopleBlock: nil,
-		Cbft: &CbftConfig{
-			InitialNodes: convertNodeUrl(initialInnerTestnetConsensusNodes),
-		},
-		VMInterpreter: "wasm",
-	}
-
-	// InnerDevnetChainConfig contains the chain parameters to run a node on the inner test network.
-	InnerDevnetChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(204),
-		HomesteadBlock:      big.NewInt(1),
-		DAOForkBlock:        nil,
-		DAOForkSupport:      false,
-		EIP150Block:         big.NewInt(2),
-		EIP150Hash:          common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		EIP155Block:         big.NewInt(3),
-		EIP158Block:         big.NewInt(3),
-		ByzantiumBlock:      big.NewInt(4),
-		ConstantinopleBlock: nil,
-		Cbft: &CbftConfig{
-			InitialNodes: convertNodeUrl(initialInnerDevnetConsensusNodes),
+			InitialNodes:      convertNodeUrl(initialTestnetConsensusNodes),
+			PeerMsgQueueSize:  1024,
+			EvidenceDir:       "evidenceDir",
+			MaxResetCacheSize: 512,
+			MaxQueuesLimit:    4096,
+			MaxBlockDist:      192,
+			MaxPingLatency:    5000,
+			MaxAvgLatency:     2000,
+			CbftVersion:       byte(0x01),
+			Remaining:         50 * time.Millisecond,
 		},
 		VMInterpreter: "wasm",
 	}
@@ -160,6 +166,25 @@ var (
 		BloomRoot:    common.HexToHash("0xf2d27490914968279d6377d42868928632573e823b5d1d4a944cba6009e16259"),
 	}
 
+	// InnerTestnetChainConfig contains the chain parameters to run a node on the inner test network.
+	InnerTestnetChainConfig = &ChainConfig{
+		ChainID:     big.NewInt(203),
+		EIP155Block: big.NewInt(3),
+		Cbft: &CbftConfig{
+			InitialNodes:      convertNodeUrl(initialInnerTestnetConsensusNodes),
+			PeerMsgQueueSize:  1024,
+			EvidenceDir:       "evidenceDir",
+			MaxResetCacheSize: 512,
+			MaxQueuesLimit:    4096,
+			MaxBlockDist:      192,
+			MaxPingLatency:    5000,
+			MaxAvgLatency:     2000,
+			CbftVersion:       byte(0x01),
+			Remaining:         50 * time.Millisecond,
+		},
+		VMInterpreter: "wasm",
+	}
+
 	// InnerTestnetTrustedCheckpoint contains the light client trusted checkpoint for the inner test network.
 	InnerTestnetTrustedCheckpoint = &TrustedCheckpoint{
 		Name:         "innertestnet",
@@ -167,6 +192,25 @@ var (
 		SectionHead:  common.HexToHash("0xa372a53decb68ce453da12bea1c8ee7b568b276aa2aab94d9060aa7c81fc3dee"),
 		CHTRoot:      common.HexToHash("0x6b02e7fada79cd2a80d4b3623df9c44384d6647fc127462e1c188ccd09ece87b"),
 		BloomRoot:    common.HexToHash("0xf2d27490914968279d6377d42868928632573e823b5d1d4a944cba6009e16259"),
+	}
+
+	// InnerDevnetChainConfig contains the chain parameters to run a node on the inner test network.
+	InnerDevnetChainConfig = &ChainConfig{
+		ChainID:     big.NewInt(204),
+		EIP155Block: big.NewInt(3),
+		Cbft: &CbftConfig{
+			InitialNodes:      convertNodeUrl(initialInnerDevnetConsensusNodes),
+			PeerMsgQueueSize:  1024,
+			EvidenceDir:       "evidenceDir",
+			MaxResetCacheSize: 512,
+			MaxQueuesLimit:    4096,
+			MaxBlockDist:      192,
+			MaxPingLatency:    5000,
+			MaxAvgLatency:     2000,
+			CbftVersion:       byte(0x01),
+			Remaining:         50 * time.Millisecond,
+		},
+		VMInterpreter: "wasm",
 	}
 
 	// InnerDevnetTrustedCheckpoint contains the light client trusted checkpoint for the inner test network.
@@ -180,19 +224,20 @@ var (
 
 	// BetanetChainConfig contains the chain parameters to run a node on the Beta test network.
 	BetanetChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(104),
-		EmptyBlock:          "on",
-		HomesteadBlock:      big.NewInt(1),
-		DAOForkBlock:        nil,
-		DAOForkSupport:      false,
-		EIP150Block:         big.NewInt(2),
-		EIP150Hash:          common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
-		EIP155Block:         big.NewInt(3),
-		EIP158Block:         big.NewInt(3),
-		ByzantiumBlock:      big.NewInt(4),
-		ConstantinopleBlock: nil,
+		ChainID:     big.NewInt(104),
+		EmptyBlock:  "on",
+		EIP155Block: big.NewInt(3),
 		Cbft: &CbftConfig{
-			InitialNodes: convertNodeUrl(initialBetanetConsensusNodes),
+			InitialNodes:      convertNodeUrl(initialBetanetConsensusNodes),
+			PeerMsgQueueSize:  1024,
+			EvidenceDir:       "evidenceDir",
+			MaxResetCacheSize: 512,
+			MaxQueuesLimit:    4096,
+			MaxBlockDist:      192,
+			MaxPingLatency:    5000,
+			MaxAvgLatency:     2000,
+			CbftVersion:       byte(0x01),
+			Remaining:         50 * time.Millisecond,
 		},
 		VMInterpreter: "wasm",
 	}
@@ -207,36 +252,22 @@ var (
 	}
 
 	GrapeChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(304),
-		EmptyBlock:          "on",
-		HomesteadBlock:      big.NewInt(1),
-		DAOForkBlock:        nil,
-		DAOForkSupport:      true,
-		EIP150Block:         big.NewInt(2),
-		EIP150Hash:          common.HexToHash("0x9b095b36c15eaf13044373aef8ee0bd3a382a5abb92e402afa44b8249c3a90e9"),
-		EIP155Block:         big.NewInt(3),
-		EIP158Block:         big.NewInt(3),
-		ByzantiumBlock:      big.NewInt(1035301),
-		ConstantinopleBlock: nil,
+		ChainID:     big.NewInt(304),
+		EmptyBlock:  "on",
+		EIP155Block: big.NewInt(3),
 		Cbft: &CbftConfig{
-			Period:   3,
-			Epoch:    30000,
-			Duration: 30,
-			PposConfig: &PposConfig{
-				CandidateConfig: &CandidateConfig{
-					Threshold:         "1000000000000000000000000",
-					DepositLimit:      10,
-					Allowed:           512,
-					MaxChair:          10,
-					MaxCount:          100,
-					RefundBlockNumber: 512,
-				},
-				TicketConfig: &TicketConfig{
-					TicketPrice:       "100000000000000000000",
-					MaxCount:          51200,
-					ExpireBlockNumber: 1536000,
-				},
-			},
+			Period:            3,
+			Epoch:             30000,
+			Duration:          30,
+			PeerMsgQueueSize:  1024,
+			EvidenceDir:       "evidenceDir",
+			MaxResetCacheSize: 512,
+			MaxQueuesLimit:    4096,
+			MaxBlockDist:      192,
+			MaxPingLatency:    5000,
+			MaxAvgLatency:     2000,
+			CbftVersion:       byte(0x01),
+			Remaining:         50 * time.Millisecond,
 		},
 	}
 
@@ -244,18 +275,30 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), "", big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, ""}
+	AllEthashProtocolChanges = &ChainConfig{big.NewInt(1337), "", big.NewInt(0), big.NewInt(0), nil, nil, ""}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), "", big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, ""}
+	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), "", big.NewInt(0), big.NewInt(0), &CliqueConfig{Period: 0, Epoch: 30000}, nil, ""}
 
-	TestChainConfig = &ChainConfig{big.NewInt(1), "", big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, ""}
+	TestChainConfig = &ChainConfig{big.NewInt(1), "", big.NewInt(0), big.NewInt(0), nil, &CbftConfig{
+		InitialNodes:      convertNodeUrl(initialMainNetConsensusNodes),
+		PeerMsgQueueSize:  1024,
+		EvidenceDir:       "evidenceDir",
+		MaxResetCacheSize: 512,
+		MaxQueuesLimit:    4096,
+		MaxBlockDist:      192,
+		MaxPingLatency:    5000,
+		MaxAvgLatency:     2000,
+		CbftVersion:       byte(0x01),
+		Remaining:         50 * time.Millisecond,
+		ValidatorMode:     "ppos",
+	}, ""}
 
-	AllCbftProtocolChanges = &ChainConfig{big.NewInt(1337), "", big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, new(CbftConfig), ""}
+	AllCbftProtocolChanges = &ChainConfig{big.NewInt(1337), "", big.NewInt(0), nil, nil, new(CbftConfig), ""}
 	TestRules              = TestChainConfig.Rules(new(big.Int))
 )
 
@@ -277,24 +320,10 @@ type TrustedCheckpoint struct {
 // that any network, identified by its genesis block, can have its own
 // set of configuration options.
 type ChainConfig struct {
-	ChainID        *big.Int `json:"chainId"` // chainId identifies the current chain and is used for replay protection
-	EmptyBlock     string   `json:"emptyBlock"`
-	HomesteadBlock *big.Int `json:"homesteadBlock,omitempty"` // Homestead switch block (nil = no fork, 0 = already homestead)
-
-	DAOForkBlock   *big.Int `json:"daoForkBlock,omitempty"`   // TheDAO hard-fork switch block (nil = no fork)
-	DAOForkSupport bool     `json:"daoForkSupport,omitempty"` // Whether the nodes supports or opposes the DAO hard-fork
-
-	// EIP150 implements the Gas price changes (https://github.com/ethereum/EIPs/issues/150)
-	EIP150Block *big.Int    `json:"eip150Block,omitempty"` // EIP150 HF block (nil = no fork)
-	EIP150Hash  common.Hash `json:"eip150Hash,omitempty"`  // EIP150 HF hash (needed for header only clients as only gas pricing changed)
-
+	ChainID     *big.Int `json:"chainId"` // chainId identifies the current chain and is used for replay protection
+	EmptyBlock  string   `json:"emptyBlock"`
 	EIP155Block *big.Int `json:"eip155Block,omitempty"` // EIP155 HF block
-	EIP158Block *big.Int `json:"eip158Block,omitempty"` // EIP158 HF block
-
-	ByzantiumBlock      *big.Int `json:"byzantiumBlock,omitempty"`      // Byzantium switch block (nil = no fork, 0 = already on byzantium)
-	ConstantinopleBlock *big.Int `json:"constantinopleBlock,omitempty"` // Constantinople switch block (nil = no fork, 0 = already activated)
-	EWASMBlock          *big.Int `json:"ewasmBlock,omitempty"`          // EWASM switch block (nil = no fork, 0 = already activated)
-
+	EWASMBlock  *big.Int `json:"ewasmBlock,omitempty"`  // EWASM switch block (nil = no fork, 0 = already activated)
 	// Various consensus engines
 	Clique *CliqueConfig `json:"clique,omitempty"`
 	Cbft   *CbftConfig   `json:"cbft,omitempty"`
@@ -310,31 +339,22 @@ type CbftConfig struct {
 	LegalCoefficient float64 `json:"legalCoefficient,omitempty"` // coefficient for checking if a block is in it's turn
 	Duration         int64   `json:"duration,omitempty"`         // number of seconds for a node to produce blocks
 	BlockInterval    uint64  `json:"-"`
+	WalEnabled       bool    `json:"-"`
 	//mock
-	InitialNodes []discover.Node   `json:"initialNodes,omitempty"`
-	NodeID       discover.NodeID   `json:"nodeID,omitempty"`
-	PrivateKey   *ecdsa.PrivateKey `json:"privateKey,omitempty"`
+	InitialNodes  []discover.Node   `json:"initialNodes,omitempty"`
+	NodeID        discover.NodeID   `json:"nodeID,omitempty"`
+	PrivateKey    *ecdsa.PrivateKey `json:"privateKey,omitempty"`
 	ValidatorMode string            `json:"validatorMode,omitempty"`
-	PposConfig *PposConfig `json:"pposConfig,omitempty"`
-}
 
-type PposConfig struct {
-	CandidateConfig *CandidateConfig
-	TicketConfig    *TicketConfig
-}
-type CandidateConfig struct {
-	Threshold         string
-	DepositLimit      uint32
-	Allowed           uint32
-	MaxCount          uint32
-	MaxChair          uint32
-	RefundBlockNumber uint32
-}
-
-type TicketConfig struct {
-	TicketPrice       string
-	MaxCount          uint32
-	ExpireBlockNumber uint32
+	PeerMsgQueueSize  uint64
+	EvidenceDir       string
+	MaxResetCacheSize int
+	MaxQueuesLimit    int
+	MaxBlockDist      uint64
+	MaxPingLatency    int64
+	MaxAvgLatency     int64
+	CbftVersion       uint8
+	Remaining         time.Duration
 }
 
 // CliqueConfig is the consensus engine configs for proof-of-authority based sealing.
@@ -359,53 +379,17 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v Constantinople: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v EIP155: %v Engine: %v}",
 		c.ChainID,
-		c.HomesteadBlock,
-		c.DAOForkBlock,
-		c.DAOForkSupport,
-		c.EIP150Block,
 		c.EIP155Block,
-		c.EIP158Block,
-		c.ByzantiumBlock,
-		c.ConstantinopleBlock,
 		engine,
 	)
 }
 
-// IsHomestead returns whether num is either equal to the homestead block or greater.
-func (c *ChainConfig) IsHomestead(num *big.Int) bool {
-	return isForked(c.HomesteadBlock, num)
-}
-
-// IsDAOFork returns whether num is either equal to the DAO fork block or greater.
-func (c *ChainConfig) IsDAOFork(num *big.Int) bool {
-	return isForked(c.DAOForkBlock, num)
-}
-
-// IsEIP150 returns whether num is either equal to the EIP150 fork block or greater.
-func (c *ChainConfig) IsEIP150(num *big.Int) bool {
-	return isForked(c.EIP150Block, num)
-}
-
 // IsEIP155 returns whether num is either equal to the EIP155 fork block or greater.
 func (c *ChainConfig) IsEIP155(num *big.Int) bool {
-	return isForked(c.EIP155Block, num)
-}
-
-// IsEIP158 returns whether num is either equal to the EIP158 fork block or greater.
-func (c *ChainConfig) IsEIP158(num *big.Int) bool {
-	return isForked(c.EIP158Block, num)
-}
-
-// IsByzantium returns whether num is either equal to the Byzantium fork block or greater.
-func (c *ChainConfig) IsByzantium(num *big.Int) bool {
-	return isForked(c.ByzantiumBlock, num)
-}
-
-// IsConstantinople returns whether num is either equal to the Constantinople fork block or greater.
-func (c *ChainConfig) IsConstantinople(num *big.Int) bool {
-	return isForked(c.ConstantinopleBlock, num)
+	//	return isForked(c.EIP155Block, num)
+	return true
 }
 
 // IsEWASM returns whether num represents a block number after the EWASM fork
@@ -417,19 +401,7 @@ func (c *ChainConfig) IsEWASM(num *big.Int) bool {
 //
 // The returned GasTable's fields shouldn't, under any circumstances, be changed.
 func (c *ChainConfig) GasTable(num *big.Int) GasTable {
-	if num == nil {
-		return GasTableHomestead
-	}
-	switch {
-	case c.IsConstantinople(num):
-		return GasTableConstantinople
-	case c.IsEIP158(num):
-		return GasTableEIP158
-	case c.IsEIP150(num):
-		return GasTableEIP150
-	default:
-		return GasTableHomestead
-	}
+	return GasTableHomestead
 }
 
 // CheckCompatible checks whether scheduled fork transitions have been imported
@@ -451,32 +423,8 @@ func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64) *Confi
 }
 
 func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, head *big.Int) *ConfigCompatError {
-	if isForkIncompatible(c.HomesteadBlock, newcfg.HomesteadBlock, head) {
-		return newCompatError("Homestead fork block", c.HomesteadBlock, newcfg.HomesteadBlock)
-	}
-	if isForkIncompatible(c.DAOForkBlock, newcfg.DAOForkBlock, head) {
-		return newCompatError("DAO fork block", c.DAOForkBlock, newcfg.DAOForkBlock)
-	}
-	if c.IsDAOFork(head) && c.DAOForkSupport != newcfg.DAOForkSupport {
-		return newCompatError("DAO fork support flag", c.DAOForkBlock, newcfg.DAOForkBlock)
-	}
-	if isForkIncompatible(c.EIP150Block, newcfg.EIP150Block, head) {
-		return newCompatError("EIP150 fork block", c.EIP150Block, newcfg.EIP150Block)
-	}
 	if isForkIncompatible(c.EIP155Block, newcfg.EIP155Block, head) {
 		return newCompatError("EIP155 fork block", c.EIP155Block, newcfg.EIP155Block)
-	}
-	if isForkIncompatible(c.EIP158Block, newcfg.EIP158Block, head) {
-		return newCompatError("EIP158 fork block", c.EIP158Block, newcfg.EIP158Block)
-	}
-	if c.IsEIP158(head) && !configNumEqual(c.ChainID, newcfg.ChainID) {
-		return newCompatError("EIP158 chain ID", c.EIP158Block, newcfg.EIP158Block)
-	}
-	if isForkIncompatible(c.ByzantiumBlock, newcfg.ByzantiumBlock, head) {
-		return newCompatError("Byzantium fork block", c.ByzantiumBlock, newcfg.ByzantiumBlock)
-	}
-	if isForkIncompatible(c.ConstantinopleBlock, newcfg.ConstantinopleBlock, head) {
-		return newCompatError("Constantinople fork block", c.ConstantinopleBlock, newcfg.ConstantinopleBlock)
 	}
 	if isForkIncompatible(c.EWASMBlock, newcfg.EWASMBlock, head) {
 		return newCompatError("ewasm fork block", c.EWASMBlock, newcfg.EWASMBlock)
@@ -545,9 +493,8 @@ func (err *ConfigCompatError) Error() string {
 // Rules is a one time interface meaning that it shouldn't be used in between transition
 // phases.
 type Rules struct {
-	ChainID                                   *big.Int
-	IsHomestead, IsEIP150, IsEIP155, IsEIP158 bool
-	IsByzantium, IsConstantinople             bool
+	ChainID  *big.Int
+	IsEIP155 bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -557,13 +504,8 @@ func (c *ChainConfig) Rules(num *big.Int) Rules {
 		chainID = new(big.Int)
 	}
 	return Rules{
-		ChainID:          new(big.Int).Set(chainID),
-		IsHomestead:      c.IsHomestead(num),
-		IsEIP150:         c.IsEIP150(num),
-		IsEIP155:         c.IsEIP155(num),
-		IsEIP158:         c.IsEIP158(num),
-		IsByzantium:      c.IsByzantium(num),
-		IsConstantinople: c.IsConstantinople(num),
+		ChainID:  new(big.Int).Set(chainID),
+		IsEIP155: c.IsEIP155(num),
 	}
 }
 

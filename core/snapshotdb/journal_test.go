@@ -1,27 +1,28 @@
 package snapshotdb
 
 import (
-	"github.com/PlatONnetwork/PlatON-Go/rlp"
-	"github.com/syndtr/goleveldb/leveldb/journal"
 	"io"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/PlatONnetwork/PlatON-Go/rlp"
+	"github.com/syndtr/goleveldb/leveldb/journal"
 )
 
 func TestJournal(t *testing.T) {
 	initDB()
 	db := dbInstance
 	defer func() {
-		_, err := db.Clear()
+		err := db.Clear()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}()
-	blockHash := rlpHash("a")
-	parentHash := rlpHash("b")
+	blockHash := generateHash("a")
+	parentHash := generateHash("b")
 	blockNumber := big.NewInt(100)
 	if err := db.writeJournalHeader(blockNumber, blockHash, parentHash, journalHeaderFromRecognized); err != nil {
 		t.Error(err)
@@ -36,8 +37,10 @@ func TestJournal(t *testing.T) {
 	if err := db.writeJournalBody(blockHash, []byte(str[1])); err != nil {
 		t.Error(err)
 	}
-
-	fd := fileDesc{Type: TypeJournal, Num: blockNumber.Int64(), BlockHash: blockHash}
+	if err := db.closeJournalWriter(blockHash); err != nil {
+		t.Error(err)
+	}
+	fd := fileDesc{Type: TypeJournal, Num: blockNumber.Uint64(), BlockHash: blockHash}
 	file, err := db.storage.Open(fd)
 	if err != nil {
 		t.Error(err)
@@ -76,6 +79,9 @@ func TestJournal(t *testing.T) {
 		}
 		i++
 	}
+	if err := file.Close(); err != nil {
+		t.Error(err)
+	}
 	if err := db.rmJournalFile(blockNumber, blockHash); err != nil {
 		t.Error(err)
 	}
@@ -84,4 +90,28 @@ func TestJournal(t *testing.T) {
 		t.Error(err)
 	}
 
+}
+
+func TestCloseJournalWriter(t *testing.T) {
+	f, err := ioutil.TempFile(os.TempDir(), "test_close*.log")
+	if err != nil {
+		t.Error(err)
+	}
+	jw := newJournalWriter(f)
+	writer, err := jw.journal.Next()
+	if err != nil {
+		t.Error(err)
+	}
+	if _, err := writer.Write([]byte("a")); err != nil {
+		t.Error("should write", err)
+	}
+	if err := jw.Close(); err != nil {
+		t.Error("should can close", err)
+	}
+	if _, err := jw.journal.Next(); err == nil {
+		t.Fatal(err)
+	}
+	if err := jw.writer.Close(); err == nil {
+		t.Error("should have be closed")
+	}
 }

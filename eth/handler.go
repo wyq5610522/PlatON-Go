@@ -1,18 +1,18 @@
-// Copyright 2015 The go-ethereum Authors
-// This file is part of the go-ethereum library.
+// Copyright 2015 The PlatON-Go Authors
+// This file is part of the PlatON-Go library.
 //
-// The go-ethereum library is free software: you can redistribute it and/or modify
+// The go-PlatON library is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Lesser General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// The go-ethereum library is distributed in the hope that it will be useful,
+// The PlatON-Go library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
-// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+// along with the PlatON-Go library. If not, see <http://www.gnu.org/licenses/>.
 
 package eth
 
@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/PlatONnetwork/PlatON-Go/core/cbfttypes"
 	"math"
 	"math/big"
 	"strconv"
@@ -28,9 +27,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/PlatONnetwork/PlatON-Go/core/cbfttypes"
+	"github.com/PlatONnetwork/PlatON-Go/core/snapshotdb"
+	"github.com/syndtr/goleveldb/leveldb/iterator"
+
 	"github.com/PlatONnetwork/PlatON-Go/common"
 	"github.com/PlatONnetwork/PlatON-Go/consensus"
-	"github.com/PlatONnetwork/PlatON-Go/consensus/misc"
 	"github.com/PlatONnetwork/PlatON-Go/core"
 	"github.com/PlatONnetwork/PlatON-Go/core/types"
 	"github.com/PlatONnetwork/PlatON-Go/eth/downloader"
@@ -52,12 +54,8 @@ const (
 	// The number is referenced from the size of tx pool.
 	txChanSize = 4096
 
-	defaultTxsCacheSize      = 20
-	defaultBroadcastInterval = 100 * time.Millisecond
-)
-
-var (
-	daoChallengeTimeout = 15 * time.Second // Time allowance for a node to reply to the DAO handshake challenge
+//	defaultTxsCacheSize      = 20
+//	defaultBroadcastInterval = 100 * time.Millisecond
 )
 
 // errIncompatibleConfig is returned if the requested protocols and configs are
@@ -107,8 +105,8 @@ type ProtocolManager struct {
 	engine consensus.Engine
 }
 
-// NewProtocolManager returns a new Ethereum sub protocol manager. The Ethereum sub protocol manages peers capable
-// with the Ethereum network.
+// NewProtocolManager returns a new PlatON sub protocol manager. The PlatON sub protocol manages peers capable
+// with the PlatON network.
 func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, networkID uint64, mux *event.TypeMux, txpool txPool, engine consensus.Engine, blockchain *core.BlockChain, chaindb ethdb.Database) (*ProtocolManager, error) {
 	// Create the protocol manager with the base fields
 	manager := &ProtocolManager{
@@ -171,7 +169,7 @@ func NewProtocolManager(config *params.ChainConfig, mode downloader.SyncMode, ne
 		return nil, errIncompatibleConfig
 	}
 	// Construct the different synchronisation mechanisms
-	manager.downloader = downloader.New(mode, chaindb, manager.eventMux, downloader.NewBlockChainWrapper(blockchain, engine), nil, manager.removePeer)
+	manager.downloader = downloader.New(mode, chaindb, snapshotdb.Instance(), manager.eventMux, downloader.NewBlockChainWrapper(blockchain, engine), nil, manager.removePeer)
 
 	validator := func(header *types.Header) error {
 		return engine.VerifyHeader(blockchain, header, true)
@@ -205,9 +203,9 @@ func (pm *ProtocolManager) removePeer(id string) {
 	if peer == nil {
 		return
 	}
-	log.Debug("Removing Ethereum peer", "peer", id)
+	log.Debug("Removing PlatON peer", "peer", id)
 
-	// Unregister the peer from the downloader and Ethereum peer set
+	// Unregister the peer from the downloader and PlatON peer set
 	pm.downloader.UnregisterPeer(id)
 	if err := pm.peers.Unregister(id); err != nil {
 		log.Error("Peer removal failed", "peer", id, "err", err)
@@ -241,7 +239,7 @@ func (pm *ProtocolManager) Start(maxPeers int) {
 }
 
 func (pm *ProtocolManager) Stop() {
-	log.Info("Stopping Ethereum protocol")
+	log.Info("Stopping PlatON protocol")
 
 	pm.txsSub.Unsubscribe()        // quits txBroadcastLoop
 	pm.minedBlockSub.Unsubscribe() // quits blockBroadcastLoop
@@ -262,7 +260,7 @@ func (pm *ProtocolManager) Stop() {
 	// Wait for all peer handler goroutines and the loops to come down.
 	pm.wg.Wait()
 
-	log.Info("Ethereum protocol stopped")
+	log.Info("PlatON protocol stopped")
 }
 
 func (pm *ProtocolManager) newPeer(pv int, p *p2p.Peer, rw p2p.MsgReadWriter) *peer {
@@ -276,16 +274,16 @@ func (pm *ProtocolManager) handle(p *peer) error {
 	if pm.peers.Len() >= pm.maxPeers && !p.Peer.Info().Network.Trusted && !p.Peer.Info().Network.Consensus {
 		return p2p.DiscTooManyPeers
 	}
-	p.Log().Debug("Ethereum peer connected", "name", p.Name())
+	p.Log().Debug("PlatON peer connected", "name", p.Name())
 
-	// Execute the Ethereum handshake
+	// Execute the PlatON handshake
 	var (
 		genesis = pm.blockchain.Genesis()
 		head    = pm.blockchain.CurrentHeader()
 		hash    = head.Hash()
 	)
 	if err := p.Handshake(pm.networkID, head.Number, hash, genesis.Hash(), pm); err != nil {
-		p.Log().Debug("Ethereum handshake failed", "err", err)
+		p.Log().Debug("PlatON handshake failed", "err", err)
 		return err
 	}
 	if rw, ok := p.rw.(*meteredMsgReadWriter); ok {
@@ -293,7 +291,7 @@ func (pm *ProtocolManager) handle(p *peer) error {
 	}
 	// Register the peer locally
 	if err := pm.peers.Register(p); err != nil {
-		p.Log().Error("Ethereum peer registration failed", "err", err)
+		p.Log().Error("PlatON peer registration failed", "err", err)
 		return err
 	}
 	defer pm.removePeer(p.id)
@@ -306,29 +304,10 @@ func (pm *ProtocolManager) handle(p *peer) error {
 	// after this will be sent via broadcasts.
 	pm.syncTransactions(p)
 
-	// If we're DAO hard-fork aware, validate any remote peer with regard to the hard-fork
-	if daoBlock := pm.chainconfig.DAOForkBlock; daoBlock != nil {
-		// Request the peer's DAO fork header for extra-data validation
-		if err := p.RequestHeadersByNumber(daoBlock.Uint64(), 1, 0, false); err != nil {
-			return err
-		}
-		// Start a timer to disconnect if the peer doesn't reply in time
-		p.forkDrop = time.AfterFunc(daoChallengeTimeout, func() {
-			p.Log().Debug("Timed out DAO fork-check, dropping")
-			pm.removePeer(p.id)
-		})
-		// Make sure it's cleaned up if the peer dies off
-		defer func() {
-			if p.forkDrop != nil {
-				p.forkDrop.Stop()
-				p.forkDrop = nil
-			}
-		}()
-	}
 	// main loop. handle incoming messages.
 	for {
 		if err := pm.handleMsg(p); err != nil {
-			p.Log().Error("Ethereum message handling failed", "err", err)
+			p.Log().Error("PlatON message handling failed", "err", err)
 			return err
 		}
 	}
@@ -441,50 +420,113 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			}
 		}
 		return p.SendBlockHeaders(headers)
+	case p.version >= eth63 && msg.Code == GetOriginAndPivotMsg:
+		p.Log().Info("[GetOriginAndPivotMsg]Received a broadcast message")
+		var query uint64
+		if err := msg.Decode(&query); err != nil {
+			return errResp(ErrDecode, "%v: %v", msg, err)
+		}
+		oHead := pm.blockchain.GetHeaderByNumber(query)
+		pivot, err := snapshotdb.Instance().BaseNum()
+		if err != nil {
+			p.Log().Error("GetOriginAndPivot get snapshotdb baseNum fail", "err", err)
+			return errors.New("GetOriginAndPivot get snapshotdb baseNum fail")
+		}
+		if pivot == nil {
+			p.Log().Error("[GetOriginAndPivot] pivot should not be nil")
+			return errors.New("[GetOriginAndPivot] pivot should not be nil")
+		}
+		pHead := pm.blockchain.GetHeaderByNumber(pivot.Uint64())
 
+		data := make([]*types.Header, 0)
+		data = append(data, oHead, pHead)
+		if err := p.SendOriginAndPivot(data); err != nil {
+			p.Log().Error("[GetOriginAndPivotMsg]send data meassage fail", "error", err)
+			return err
+		}
+	case p.version >= eth63 && msg.Code == OriginAndPivotMsg:
+		p.Log().Debug("[OriginAndPivotMsg]Received a broadcast message")
+		var data []*types.Header
+		if err := msg.Decode(&data); err != nil {
+			return errResp(ErrDecode, "msg %v: %v", msg, err)
+		}
+		// Deliver all to the downloader
+		if err := pm.downloader.DeliverOriginAndPivot(p.id, data); err != nil {
+			p.Log().Error("Failed to deliver ppos storage data", "err", err)
+			return err
+		}
+	case p.version >= eth63 && msg.Code == GetPPOSStorageMsg:
+		p.Log().Info("[GetPPOSStorageMsg]Received a broadcast message", "id", common.CurrentGoRoutineID())
+		var query []interface{}
+		if err := msg.Decode(&query); err != nil {
+			return errResp(ErrDecode, "%v: %v", msg, err)
+		}
+		f := func(num *big.Int, iter iterator.Iterator) error {
+			var ps PPOSStorage
+			var count int
+			ps.KVs = make([]downloader.PPOSStorageKV, 0)
+			if num == nil {
+				return errors.New("num should not be nil")
+			}
+			ps.Pivot = pm.blockchain.GetHeaderByNumber(num.Uint64())
+			ps.Latest = pm.blockchain.CurrentHeader()
+			if err := p.SendPPOSStorage(ps); err != nil {
+				p.Log().Error("[GetPPOSStorageMsg]send last ppos meassage fail", "error", err)
+				return err
+			}
+			var bytes int
+			for iter.Next() {
+				bytes = bytes + len(iter.Key()) + len(iter.Value())
+				if count >= downloader.PPOSStorageKVSizeFetch || bytes > softResponseLimit {
+					if err := p.SendPPOSStorage(ps); err != nil {
+						p.Log().Error("[GetPPOSStorageMsg]send ppos message fail", "error", err, "kvnum", ps.KVNum)
+						return err
+					}
+					count = 0
+					ps.KVs = make([]downloader.PPOSStorageKV, 0)
+					bytes = 0
+				}
+				k, v := make([]byte, len(iter.Key())), make([]byte, len(iter.Value()))
+				copy(k, iter.Key())
+				copy(v, iter.Value())
+				ps.KVs = append(ps.KVs, [2][]byte{
+					k, v,
+				})
+				ps.KVNum++
+				count++
+			}
+			ps.Last = true
+			if err := p.SendPPOSStorage(ps); err != nil {
+				p.Log().Error("[GetPPOSStorageMsg]send last ppos message fail", "error", err)
+				return err
+			}
+			return nil
+		}
+
+		if err := snapshotdb.Instance().WalkBaseDB(nil, f); err != nil {
+			p.Log().Error("[GetPPOSStorageMsg]send  ppos storage fail", "error", err)
+		}
+
+	case p.version >= eth63 && msg.Code == PPOSStorageMsg:
+		p.Log().Debug("Received a broadcast message[PposStorageMsg]")
+		var data PPOSStorage
+		if err := msg.Decode(&data); err != nil {
+			return errResp(ErrDecode, "msg %v: %v", msg, err)
+		}
+		// Deliver all to the downloader
+		if err := pm.downloader.DeliverPposStorage(p.id, data.Latest, data.Pivot, data.KVs, data.Last, data.KVNum); err != nil {
+			p.Log().Error("Failed to deliver ppos storage data", "err", err)
+		}
 	case msg.Code == BlockHeadersMsg:
 		// A batch of headers arrived to one of our previous requests
 		var headers []*types.Header
 		if err := msg.Decode(&headers); err != nil {
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
 		}
-		// If no headers were received, but we're expending a DAO fork check, maybe it's that
-		if len(headers) == 0 && p.forkDrop != nil {
-			// Possibly an empty reply to the fork header checks, sanity check TDs
-			verifyDAO := true
 
-			// If we already have a DAO header, we can check the peer's TD against it. If
-			// the peer's ahead of this, it too must have a reply to the DAO check
-			if daoHeader := pm.blockchain.GetHeaderByNumber(pm.chainconfig.DAOForkBlock.Uint64()); daoHeader != nil {
-				if _, bn := p.Head(); bn.Cmp(daoHeader.Number) >= 0 {
-					verifyDAO = false
-				}
-			}
-			// If we're seemingly on the same chain, disable the drop timer
-			if verifyDAO {
-				p.Log().Debug("Seems to be on the same side of the DAO fork")
-				p.forkDrop.Stop()
-				p.forkDrop = nil
-				return nil
-			}
-		}
 		// Filter out any explicitly requested headers, deliver the rest to the downloader
 		filter := len(headers) == 1
 		if filter {
-			// If it's a potential DAO fork check, validate against the rules
-			if p.forkDrop != nil && pm.chainconfig.DAOForkBlock.Cmp(headers[0].Number) == 0 {
-				// Disable the fork drop timer
-				p.forkDrop.Stop()
-				p.forkDrop = nil
-
-				// Validate the header and either drop the peer or continue
-				if err := misc.VerifyDAOHeaderExtraData(pm.chainconfig, headers[0]); err != nil {
-					p.Log().Debug("Verified to be on the other side of the DAO fork, dropping")
-					return err
-				}
-				p.Log().Debug("Verified to be on the same side of the DAO fork")
-				return nil
-			}
 			// Irrelevant of the fork checks, send the header to the fetcher just in case
 			headers = pm.fetcher.FilterHeaders(p.id, headers, time.Now())
 		}
@@ -515,6 +557,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 				return errResp(ErrDecode, "msg %v: %v", msg, err)
 			}
 			// Retrieve the requested block body, stopping if enough was found
+			log.Debug(fmt.Sprintf("Send block body peer:%s,hash:%v", p.id, hash.Hex()))
 			if data := pm.blockchain.GetBodyRLP(hash); len(data) != 0 {
 				bodies = append(bodies, data)
 				bytes += len(data)
@@ -522,7 +565,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 				log.Debug(fmt.Sprintf("Block body empty peer:%s hash:%s", p.id, hash.TerminalString()))
 			}
 		}
-		log.Debug(fmt.Sprintf("Send block body peer:%s", p.id))
+		log.Debug(fmt.Sprintf("Send block body peer:%s,bodies:%v", p.id, len(bodies)))
 		return p.SendBlockBodiesRLP(bodies)
 
 	case msg.Code == BlockBodiesMsg:
@@ -853,17 +896,35 @@ func (pm *ProtocolManager) minedBroadcastLoop() {
 }
 
 func (pm *ProtocolManager) txBroadcastLoop() {
-	timer := time.NewTimer(defaultBroadcastInterval)
+	DefaultTxsCacheSize := 20
+	DefaultBroadcastInterval := 100 * time.Millisecond
+	if pm.blockchain != nil {
+		if 0 >= pm.blockchain.CacheConfig().DefaultTxsCacheSize {
+			pm.blockchain.CacheConfig().DefaultTxsCacheSize = DefaultTxsCacheSize
+		} else {
+			DefaultTxsCacheSize = pm.blockchain.CacheConfig().DefaultTxsCacheSize
+		}
+	}
+
+	if pm.blockchain != nil {
+		if 0 >= pm.blockchain.CacheConfig().DefaultBroadcastInterval {
+			pm.blockchain.CacheConfig().DefaultBroadcastInterval = DefaultBroadcastInterval
+		} else {
+			DefaultBroadcastInterval = pm.blockchain.CacheConfig().DefaultBroadcastInterval
+		}
+	}
+
+	timer := time.NewTimer(DefaultBroadcastInterval)
 
 	for {
 		select {
 		case event := <-pm.txsCh:
 			pm.txsCache = append(pm.txsCache, event.Txs...)
-			if len(pm.txsCache) >= defaultTxsCacheSize {
+			if len(pm.txsCache) >= DefaultTxsCacheSize {
 				log.Trace("broadcast txs", "count", len(pm.txsCache))
 				pm.BroadcastTxs(pm.txsCache)
 				pm.txsCache = make([]*types.Transaction, 0)
-				timer.Reset(defaultBroadcastInterval)
+				timer.Reset(DefaultBroadcastInterval)
 			}
 		case <-timer.C:
 			if len(pm.txsCache) > 0 {
@@ -871,7 +932,7 @@ func (pm *ProtocolManager) txBroadcastLoop() {
 				pm.BroadcastTxs(pm.txsCache)
 				pm.txsCache = make([]*types.Transaction, 0)
 			}
-			timer.Reset(defaultBroadcastInterval)
+			timer.Reset(DefaultBroadcastInterval)
 
 			// Err() channel will be closed when unsubscribing.
 		case <-pm.txsSub.Err():
@@ -880,10 +941,10 @@ func (pm *ProtocolManager) txBroadcastLoop() {
 	}
 }
 
-// NodeInfo represents a short summary of the Ethereum sub-protocol metadata
+// NodeInfo represents a short summary of the PlatON sub-protocol metadata
 // known about the host peer.
 type NodeInfo struct {
-	Network uint64              `json:"network"` // Ethereum network ID (1=Frontier, 2=Morden, Ropsten=3, Rinkeby=4)
+	Network uint64              `json:"network"` // PlatON network ID (1=Frontier, 2=Morden, Ropsten=3, Rinkeby=4)
 	Genesis common.Hash         `json:"genesis"` // SHA3 hash of the host's genesis block
 	Config  *params.ChainConfig `json:"config"`  // Chain configuration for the fork rules
 	Head    common.Hash         `json:"head"`    // SHA3 hash of the host's best owned block

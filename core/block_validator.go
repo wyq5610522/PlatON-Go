@@ -89,7 +89,7 @@ func (v *BlockValidator) ValidateState(block, parent *types.Block, statedb *stat
 	}
 	// Validate the state root against the received state root and throw
 	// an error if they don't match.
-	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+	if root := statedb.IntermediateRoot(true); header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x)", header.Root, root)
 	}
 	return nil
@@ -101,12 +101,10 @@ func (v *BlockValidator) ValidateState(block, parent *types.Block, statedb *stat
 // the gas allowance.
 func CalcGasLimit(parent *types.Block, gasFloor, gasCeil uint64) uint64 {
 
-	return parent.GasLimit()
-
-	// contrib = (parentGasUsed * 3 / 2) / 1024
+	// contrib = (parentGasUsed * 3 / 2) / 256
 	contrib := (parent.GasUsed() + parent.GasUsed()/2) / params.GasLimitBoundDivisor
 
-	// decay = parentGasLimit / 1024 -1
+	// decay = parentGasLimit / 256 -1
 	decay := parent.GasLimit()/params.GasLimitBoundDivisor - 1
 
 	/*
