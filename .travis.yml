@@ -28,8 +28,8 @@ matrix:
       script:
         - pwd
         - ls
-        - cat .travis.yml
         - cd ${WORKSPACE}
+        - cat .travis.yml
         - chmod u+x ./build/*.sh
         - make platon
         - cd ./build/bin && ls
