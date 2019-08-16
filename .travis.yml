@@ -19,6 +19,7 @@ matrix:
       before_install:
         - pwd
         - ls
+        - WORKSPACE=$(pwd)
         - git clone https://github.com/dfinity/bn
         - cd bn
         - make
@@ -27,6 +28,7 @@ matrix:
       script:
         - pwd
         - ls
+        - cd ${WORKSPACE}
         - chmod u+x ./build/*.sh
         - make all
         - cd ./build/bin && ls
