@@ -35,6 +35,7 @@ matrix:
         - cd ./build/bin && ls
         - echo "test is a pr test!"
 
+    # add a test!
     # This builder compile PlatON at Windows server 2016
     # - name: windows compile
     #   os: windows
